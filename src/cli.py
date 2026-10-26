@@ -30,6 +30,8 @@ try:
 except ImportError:
     argcomplete = None
 
+log = logging.getLogger("cli")
+
 
 def _setup_logging(config: Config, verbose: bool) -> None:
     config.pipeline.log_file.parent.mkdir(parents=True, exist_ok=True)
