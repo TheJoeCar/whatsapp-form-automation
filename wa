@@ -3,10 +3,35 @@
 
 This wrapper script allows argcomplete to properly register tab-completion
 for the whatsapp-form-automation CLI.
+
+Usage:
+    ./wa --help
+    ./wa run
+    eval "$(wa completion bash)"
 """
 
+import os
 import sys
-from src.cli import main
+import subprocess
+from pathlib import Path
+
+
+def main() -> None:
+    # Find the venv Python relative to this script's location.
+    # This ensures the correct Python with all dependencies is used.
+    project_root = Path(__file__).resolve().parent
+    venv_python = project_root / ".venv" / "bin" / "python"
+
+    if not venv_python.exists():
+        # Fall back to system python3
+        python = "python3"
+    else:
+        python = str(venv_python)
+
+    cmd = [python, "-m", "src.cli"] + sys.argv[1:]
+    result = subprocess.run(cmd)
+    sys.exit(result.returncode)
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
