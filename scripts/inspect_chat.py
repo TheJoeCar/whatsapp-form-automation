@@ -1,6 +1,6 @@
 """Inspect an opened WhatsApp chat (message list DOM) for selector calibration.
 
-Usage: .venv/bin/python -m scripts.inspect_chat "Test community"
+Usage: .venv/bin/python -m scripts.inspect_chat "My Channel"
 """
 
 from __future__ import annotations
@@ -109,4 +109,4 @@ def main(name: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "Test community")
+    main(sys.argv[1] if len(sys.argv) > 1 else "My Channel")
