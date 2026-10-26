@@ -18,6 +18,11 @@ cp .env.example .env
 
 # 3. Configure config.yaml
 # Set your WhatsApp channel name and adjust any defaults
+
+# 4. (Optional) Enable shell tab-completion
+eval "$(register-python-argcomplete wa)"  # add to ~/.bashrc or ~/.zshrc
+# Or use the built-in command:
+eval "$(wa completion bash)"
 ```
 
 ## Configuration
@@ -65,6 +70,9 @@ alias wa=".venv/bin/python -m src.cli"
 
 # Verification
 wa init                      # check config health
+wa completion bash           # print bash completion script
+wa completion zsh            # print zsh completion script
+wa completion fish           # print fish completion script
 wa check-llm                 # verify the model responds
 wa list-free-models          # see available zero-cost models
 

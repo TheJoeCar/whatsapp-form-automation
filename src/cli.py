@@ -25,6 +25,11 @@ from .requirements import (
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMonitor, login_interactive
 
+try:
+    import argcomplete
+except ImportError:
+    argcomplete = None
+
 
 def _setup_logging(config: Config, verbose: bool) -> None:
     config.pipeline.log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +273,36 @@ def cmd_state(config: Config, args) -> None:
             monitor.stop()
 
 
+def cmd_completion(config: Config, args) -> None:
+    """Print shell completion setup for the given shell.
+
+    Usage:
+        eval "$(wa completion bash)"   # add to ~/.bashrc
+        eval "$(wa completion zsh)"    # add to ~/.zshrc
+        eval "$(wa completion fish)"   # add to ~/.config/fish/config.fish
+    """
+    shell = args.shell if hasattr(args, 'shell') else "bash"
+    if argcomplete is None:
+        sys.exit("argcomplete is not installed — run: uv pip install argcomplete")
+    if shell not in ("bash", "zsh", "fish"):
+        sys.exit(f"unsupported shell: {shell}. Use bash, zsh, or fish")
+
+    # Use register-python-argcomplete for proper setup
+    import shutil
+    register = shutil.which("register-python-argcomplete")
+    if register:
+        print(f"# To enable tab-completion for 'wa', add this to your ~/.{shell}rc:")
+        print(f'eval "$({register} wa)"')
+        print()
+        print("# Or source the completion script directly:")
+
+    print(argcomplete.shellcode(
+        executables=["wa"],
+        shell=shell,
+        use_defaults=True,
+    ))
+
+
 def cmd_init(config: Config, args) -> None:
     """Write .env from .env.example if needed and check configuration health."""
     env_path = PROJECT_ROOT / ".env"
@@ -338,6 +373,12 @@ def main(argv=None) -> None:
 
     sub.add_parser("init", help="check configuration health")
 
+    p = sub.add_parser("completion", help="print shell completion script")
+    p.add_argument("shell", choices=["bash", "zsh", "fish"],
+                    help="target shell")
+
+    if argcomplete:
+        argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
     config = load_config(args.config)
     handlers = {
@@ -353,6 +394,7 @@ def main(argv=None) -> None:
         "list-free-models": cmd_list_free_models,
         "state": cmd_state,
         "init": cmd_init,
+        "completion": cmd_completion,
     }
     handlers[args.command](config, args)
 
