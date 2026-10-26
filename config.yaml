@@ -21,7 +21,8 @@ llm:
 
 whatsapp:
   # Exact chat/channel name as shown in WhatsApp Web.
-  channel: "My Channel"
+  # Only messages from this channel are monitored.
+  channel: "Test community"
   poll_interval_seconds: 60
   session_dir: data/whatsapp_session
   # Login must be headful (QR scan). Monitoring can run headless afterwards.

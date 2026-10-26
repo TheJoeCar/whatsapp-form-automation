@@ -184,6 +184,29 @@ def cmd_login(config: Config, args) -> None:
     sys.exit(0 if ok else 1)
 
 
+def cmd_list_channels(config: Config, args) -> None:
+    """List all WhatsApp chats/channels with their names."""
+    monitor = WhatsAppMonitor(config.whatsapp, headless=args.headless)
+    monitor.start()
+    try:
+        if not monitor.wait_ready(quiet=False):
+            print("WhatsApp Web not ready — are you logged in?")
+            return
+        rows = monitor.page.get_by_role("listitem").all()
+        print(f"Found {len(rows)} chat(s):")
+        for i, item in enumerate(rows[:30]):
+            label = item.get_attribute("aria-label") or "?"
+            # Try to get the last message preview
+            text_sel = config.whatsapp.selectors.get("message_text", "span.selectable-text")
+            msg = item.locator(text_sel).first
+            preview = msg.inner_text(timeout=500).strip()[:60] if msg.count() > 0 else ""
+            print(f"  {i+1}. {label}")
+            if preview:
+                print(f"     last msg: {preview}")
+    finally:
+        monitor.stop()
+
+
 def cmd_debug_whatsapp(config: Config, args) -> None:
     monitor = WhatsAppMonitor(config.whatsapp, headless=args.headless)
     monitor.start()
@@ -276,6 +299,9 @@ def main(argv=None) -> None:
     p = sub.add_parser("debug-whatsapp", help="open WhatsApp Web and dump selector diagnostics")
     p.add_argument("--headless", action="store_true", help="run headless instead of headful")
 
+    p = sub.add_parser("list-channels", help="list all WhatsApp chats/channels with their names")
+    p.add_argument("--headless", action="store_true", help="run headless instead of headful")
+
     sub.add_parser("check-llm", help="send a tiny prompt to the configured model")
 
     sub.add_parser("list-free-models", help="list zero-cost models currently on OpenRouter")
@@ -295,6 +321,7 @@ def main(argv=None) -> None:
         "check-requirements": cmd_check_requirements,
         "login-whatsapp": cmd_login,
         "debug-whatsapp": cmd_debug_whatsapp,
+        "list-channels": cmd_list_channels,
         "check-llm": cmd_check_llm,
         "list-free-models": cmd_list_free_models,
         "state": cmd_state,
