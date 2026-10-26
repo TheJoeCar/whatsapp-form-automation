@@ -22,7 +22,7 @@ llm:
 whatsapp:
   # Exact chat/channel name as shown in WhatsApp Web.
   # Only messages from this channel are monitored.
-  channel: "Test community"
+  channel: "My Channel"
   poll_interval_seconds: 60
   session_dir: data/whatsapp_session
   # WhatsApp Web is unreliable headless; keep the browser window visible.
@@ -48,4 +48,4 @@ pipeline:
   state_file: state/processed.json
   log_file: logs/pipeline.log
   # Safety: dry-run prints what it *would* do. Set false only after testing.
-  dry_run: false 
+  dry_run: true
