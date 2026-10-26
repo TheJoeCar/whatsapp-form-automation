@@ -21,13 +21,44 @@ cp .env.example .env && $EDITOR .env
 # 3. Point config.yaml at your channel: whatsapp.channel
 ```
 
-## Configuration (`config.yaml`)
+## Configuration
 
-| Section | What | Default |
+Two files control behavior:
+
+**`config.yaml`** — plumbing (model, channel, selectors, dry-run default).
+
+**`requirements.yaml`** — *your requirements document*: which forms qualify, and
+what answers to give. The pipeline only fills forms that pass every rule.
+
+```yaml
+identity:            # answers for questions about you
+  name: "Your Name"
+  email: "you@example.com"
+  phone: "+15551234567"
+  extras:            # keyword-matched facts beyond name/email/phone
+    - match: ["age", "how old"]
+      value: "34"
+
+rules:               # gates - a form that fails any of these is skipped (and logged why)
+  title_must_include: []        # form title must contain one of these (empty = any)
+  title_must_not_include: []    # form title must contain none of these
+  min_fields: 1
+  max_fields: 30
+  disallowed_types: []          # skip forms containing these question types
+  disallowed_keywords: []       # skip forms where any question mentions these
+  required_all_answerable: true # every required field must be answerable from identity/options
+  fill_optional: false          # answer required questions only
+  never_guess: true             # abort instead of writing placeholder answers
+```
+
+If `requirements.yaml` is missing the pipeline falls back to legacy test mode
+(`forms.test_data` in config.yaml, everything filled) with a logged warning.
+
+| config.yaml | What | Default |
 |---|---|---|
-| `llm` | provider, model, endpoint | OpenRouter, `openrouter/openrouter/free` (auto-picks a free model) |
+| `llm` | provider, model, endpoint | OpenRouter, `openrouter/free` (auto-picks a free model) |
 | `whatsapp` | channel name, poll interval, session dir, selectors | 60s polling, headless |
-| `forms` | test persona used for name/email/phone fields | clearly-fake values |
+| `forms.identity_file` | path to the requirements document | `requirements.yaml` |
 | `pipeline` | state file, log file, **`dry_run`** | **dry run ON** |
 
 ## Usage
@@ -39,10 +70,11 @@ wa init                 # config health check
 wa check-llm            # tiny prompt to verify the model works
 wa list-free-models     # see which free models exist right now
 
-# Google Forms (no WhatsApp involved)
-wa parse-form <url>     # show how the parser reads your form - calibrate here
-wa fill-form <url>      # print the payload the LLM would submit (no submit)
-wa submit-form <url>    # parse + fill + submit (asks for confirmation)
+# Requirements + forms (no WhatsApp involved)
+wa check-requirements <url>  # does the form satisfy requirements.yaml? where would answers come from?
+wa parse-form <url>          # show how the parser reads your form - calibrate here
+wa fill-form <url>           # print the payload that would be submitted (no submit; --force bypasses the gate)
+wa submit-form <url>         # parse + fill + submit (asks for confirmation; --force bypasses the gate)
 
 # WhatsApp
 wa login-whatsapp       # ONE TIME: headful browser opens, scan the QR
@@ -56,9 +88,12 @@ wa state --clear        # forget processed messages (re-process on next poll)
 ```
 
 The flow: new messages in the configured channel → URL extraction → Google
-Forms link check (incl. `forms.gle` short links) → parse form → LLM fills
-fields (validated against real options) → POST to the form's `formResponse`
-endpoint → result logged, message marked processed in `state/processed.json`.
+Forms link check (incl. `forms.gle` short links) → parse form → **requirements
+gate** (`evaluate_form` against `rules`) → fill with your identity (LLM values
+validated against real options; `never_guess` aborts instead of guessing) →
+POST to the form's `formResponse` endpoint → result logged, message marked
+processed in `state/processed.json`. Forms failing the gate are skipped with
+the reason in the log.
 
 ## Swapping in a local model later (Ollama)
 

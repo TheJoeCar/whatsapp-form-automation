@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 
 from .config import Config
-from .forms.filler import fill_form
+from .forms.filler import FillAborted, fill_form
 from .forms.parser import (
     canonical_urls,
     fetch_form_html,
@@ -17,6 +17,7 @@ from .forms.parser import (
 )
 from .forms.submitter import submit_form
 from .llm.client import LLMClient
+from .requirements import Requirements, Rules, evaluate_form, load_requirements
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMessage, WhatsAppMonitor
 
@@ -37,6 +38,12 @@ class Pipeline:
         self.config = config
         self.dry_run = config.pipeline.dry_run if dry_run is None else dry_run
         self.state = StateStore(config.pipeline.state_file)
+        self.identity, self.rules, self.requirements = resolve_identity(config)
+        if self.requirements is None:
+            log.warning(
+                "no requirements document at %s - every form will be filled (legacy test mode)",
+                config.forms.identity_file,
+            )
         self.llm = self._build_llm()
         self._headless = headless
 
@@ -117,10 +124,19 @@ class Pipeline:
                 return FormOutcome(url, "skipped", "no fields parsed - run parse-form to calibrate")
 
             log.info("parsed form %r with %d field(s)", form.title, len(form.fields))
+
+            # Requirements gate: only proceed when every rule passes.
+            if self.rules:
+                reasons = evaluate_form(form, self.rules, self.identity)
+                if reasons:
+                    log.info("skipping form %r: %s", form.title or url, "; ".join(reasons))
+                    return FormOutcome(url, "skipped", "; ".join(reasons))
+
             values, warnings = fill_form(
                 form,
                 llm=self.llm,
-                test_data=self.config.forms.test_data,
+                identity=self.identity,
+                rules=self.rules.as_dict() if self.rules else {},
                 use_llm=self.llm is not None,
             )
             for warning in warnings:
@@ -134,9 +150,20 @@ class Pipeline:
             level = log.info if result.ok else log.error
             level("submit %s -> %s", form.submit_url, result.detail)
             return FormOutcome(url, "submitted" if result.ok else "error", result.detail)
+        except FillAborted as exc:
+            log.info("not filling form %s: %s", url, exc)
+            return FormOutcome(url, "skipped", str(exc))
         except Exception as exc:  # noqa: BLE001 - keep the pipeline alive per-form
             log.exception("form processing failed for %s", url)
             return FormOutcome(url, "error", str(exc))
+
+
+def resolve_identity(config: Config) -> tuple[dict, Rules | None, Requirements | None]:
+    """(identity, rules, requirements) - requirements.yaml wins over legacy test_data."""
+    requirements = load_requirements(config.forms.identity_file)
+    if requirements is None:
+        return dict(config.forms.test_data), None, None
+    return requirements.identity.as_dict(), requirements.rules, requirements
 
 
 def _ensure_scheme(url: str) -> str:

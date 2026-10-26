@@ -1,0 +1,61 @@
+# Form requirements document
+# ==========================
+# The pipeline only fills forms that pass EVERY rule in this file, and it uses
+# the identity data below to answer fields about you. Edit freely.
+
+identity:
+  # Used when a question asks about you. Keys are matched by keyword against
+  # the question title (e.g. "email" in "What is your email address?").
+  name: "Your Name"
+  email: "you@example.com"
+  phone: "+15551234567"
+  organization: "Your Organization"
+
+  # Extra facts the standard keywords don't cover. `match` entries are
+  # case-insensitive substrings of the question title; first match wins.
+  extras:
+    - match: ["age", "how old"]
+      value: "30"
+    - match: ["city", "location", "where do you live"]
+      value: "Portland, OR"
+    - match: ["company", "employer", "role", "job title"]
+      value: "Engineer at Your Organization"
+
+rules:
+  # ---- Form-level gates: if any rule fails, the form is skipped (and logged why)
+
+  # If non-empty, the form title must contain at least one of these (case-insensitive).
+  # Leave empty to accept any title.
+  title_must_include: []
+
+  # If any of these appear in the form title, skip the form.
+  title_must_not_include: []
+
+  min_fields: 1
+  max_fields: 30
+
+  # Skip the form if any question has one of these types
+  # (short_answer | paragraph | multiple_choice | checkboxes | dropdown | linear_scale).
+  disallowed_types: []
+
+  # Skip the form if ANY question title contains one of these.
+  # Starter set for safety - adjust to your needs.
+  disallowed_keywords:
+    - password
+    - social security
+    - ssn
+    - credit card
+    - bank account
+
+  # Every required question must be answerable from identity data or form
+  # options. If anything required can't be answered confidently, skip the form.
+  required_all_answerable: true
+
+  # ---- Filling behavior (applies after the gates pass)
+
+  # false = answer required questions only; true = also answer optional ones.
+  fill_optional: false
+
+  # true = abort the submission rather than write placeholder text like
+  # "Automated test response" into a required field we don't have data for.
+  never_guess: true

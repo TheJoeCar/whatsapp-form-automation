@@ -16,6 +16,7 @@ to bypass CAPTCHAs, bulk-submit, or fill other people's forms.
 
 | Decision | Choice | Why |
 |---|---|---|
+| **Requirements document** | `requirements.yaml`: identity + rules, enforced by a gate before filling | You decide *which* forms qualify and *what* answers to give; ineligible forms are skipped with logged reasons |
 | LLM hosting | **OpenRouter free models now**, local Ollama later | No model download needed to start; swap later by changing `base_url`/`model` in config |
 | LLM client | Single **OpenAI-compatible** client | OpenRouter (`https://openrouter.ai/api/v1`) and Ollama (`http://localhost:11434/v1`) speak the same protocol → drop-in swap |
 | Form submission | **HTTP POST to the form's `formResponse` endpoint**, not browser automation | Google Forms can be submitted programmatically with `entry.NN` params; far more reliable than clicking through a browser |
@@ -74,13 +75,15 @@ to bypass CAPTCHAs, bulk-submit, or fill other people's forms.
 whatsapp-form-automation/
 ├── plan.md                  # this file
 ├── README.md                # setup + usage
-├── requirements.txt
+├── requirements.txt         # python deps
+├── requirements.yaml        # form requirements document: identity + rules
 ├── config.yaml              # checked in, no secrets (api key comes from .env)
 ├── .env.example
 ├── .gitignore
 ├── src/
 │   ├── cli.py               # entry point (run / parse-form / fill-form / submit-form / login / debug)
 │   ├── config.py            # config + .env loading
+│   ├── requirements.py      # requirements document: identity, rules, gate (evaluate_form)
 │   ├── state.py             # processed-message store (JSON)
 │   ├── llm/client.py        # OpenAI-compatible client (OpenRouter/Ollama) + free-model listing
 │   ├── forms/parser.py      # URL resolution, entry-id extraction, field types/options
@@ -101,6 +104,8 @@ whatsapp-form-automation/
       → *calibrate parser against one of your real forms with `parse-form <url>`*
 - [x] **M2 — WhatsApp monitor**: login script (QR once), channel search, message polling, debug command
 - [x] **M3 — Pipeline + CLI**: `run --once` end-to-end in dry-run, then real submit
+- [x] **M3.5 — Requirements document**: `requirements.yaml` gate (rules) + identity-driven filling,
+      `check-requirements` command, `never_guess` abort instead of placeholders
 - [ ] **M4 — Hardening**: run against real channel for a few days; retry/backoff tuning;
       switch LLM to Ollama on the home lab when ready
 
@@ -118,8 +123,9 @@ whatsapp-form-automation/
 ## Test checklist
 
 1. `check-llm` → model responds
-2. `parse-form <your form url>` → all fields/types/options correct
-3. `fill-form <url>` (dry run) → payload sensible, options valid
-4. `submit-form <url> --yes` on a throwaway form → response recorded
-5. `run --once` with the monitor → dry-run plan printed for the channel message
-6. Real run on a test form, then flip off dry-run for the real target
+2. Edit `requirements.yaml`: identity + rules; `check-requirements <url>` → gate verdict + answer sources
+3. `parse-form <your form url>` → all fields/types/options correct
+4. `fill-form <url>` (dry run) → payload sensible, options valid, required-only when `fill_optional: false`
+5. `submit-form <url> --yes` on a throwaway form you own → response recorded
+6. `run --once` with the monitor → dry-run plan printed for the channel message
+7. Real run on a test form, then flip off dry-run for the real target

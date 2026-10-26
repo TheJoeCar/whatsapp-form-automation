@@ -35,15 +35,17 @@ whatsapp:
     message_text: 'span.selectable-text'
 
 forms:
-  # Test persona the LLM should use when the form asks for personal data.
-  # Keep it clearly fake — these are your own test submissions.
+  # Your requirements document: identity data + rules deciding which forms
+  # qualify to be filled. See requirements.yaml.
+  identity_file: requirements.yaml
+  # Legacy fallback used ONLY when the requirements file doesn't exist.
   test_data:
     name: "Testy McTestface"
     email: "testy.mctestface@example.com"
     phone: "+15550000001"
     organization: "Automated Testing Co"
   # Prefer LLM-generated values; if the LLM is unavailable, fall back to
-  # deterministic heuristics (still produces a valid payload).
+  # identity heuristics (still produces a valid payload).
   use_llm_fallback: true
 
 pipeline:
