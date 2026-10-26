@@ -3,6 +3,7 @@
 
 # User configuration (personalized, not committed)
 requirements.md
+requirements.yaml
 
 # Runtime data (browser profile, logs, state)
 data/
