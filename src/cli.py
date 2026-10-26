@@ -25,6 +25,11 @@ from .requirements import (
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMonitor, login_interactive
 
+try:
+    import argcomplete
+except ImportError:
+    argcomplete = None
+
 
 def _setup_logging(config: Config, verbose: bool) -> None:
     config.pipeline.log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -75,9 +80,15 @@ def cmd_run(config: Config, args) -> None:
         headless=False if args.headed else None,
     )
     if args.loop:
-        pipeline.run_forever()
+        pipeline.run_forever(
+            no_ack=args.no_ack,
+            no_ack_last=args.no_ack_last,
+        )
     else:
-        handled = pipeline.run_once()
+        handled = pipeline.run_once(
+            no_ack=args.no_ack,
+            no_ack_last=args.no_ack_last,
+        )
         print(f"done - {handled} new message(s) handled (see {config.pipeline.log_file})")
 
 
@@ -239,6 +250,57 @@ def cmd_state(config: Config, args) -> None:
     if args.clear:
         store.path.unlink(missing_ok=True)
         print("state cleared")
+    if args.ack:
+        headless = not args.headed if hasattr(args, 'headed') else config.whatsapp.headless
+        monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
+        monitor.start()
+        try:
+            if not monitor.wait_ready(quiet=False):
+                print("WhatsApp Web not ready — are you logged in?")
+                return
+            if not monitor.open_channel(config.whatsapp.channel):
+                print(f"could not open channel {config.whatsapp.channel!r}")
+                return
+            messages = monitor.read_messages()
+            newly = 0
+            for msg in messages:
+                if not store.seen(msg.message_id):
+                    store.mark(msg.message_id, "acknowledged")
+                    newly += 1
+            store.save()
+            print(f"acknowledged {newly} message(s) ({len(messages)} total visible)")
+        finally:
+            monitor.stop()
+
+
+def cmd_completion(config: Config, args) -> None:
+    """Print shell completion setup for the given shell.
+
+    Usage:
+        eval "$(wa completion bash)"   # add to ~/.bashrc
+        eval "$(wa completion zsh)"    # add to ~/.zshrc
+        eval "$(wa completion fish)"   # add to ~/.config/fish/config.fish
+    """
+    shell = args.shell if hasattr(args, 'shell') else "bash"
+    if argcomplete is None:
+        sys.exit("argcomplete is not installed — run: uv pip install argcomplete")
+    if shell not in ("bash", "zsh", "fish"):
+        sys.exit(f"unsupported shell: {shell}. Use bash, zsh, or fish")
+
+    # Use register-python-argcomplete for proper setup
+    import shutil
+    register = shutil.which("register-python-argcomplete")
+    if register:
+        print(f"# To enable tab-completion for 'wa', add this to your ~/.{shell}rc:")
+        print(f'eval "$({register} wa)"')
+        print()
+        print("# Or source the completion script directly:")
+
+    print(argcomplete.shellcode(
+        executables=["wa"],
+        shell=shell,
+        use_defaults=True,
+    ))
 
 
 def cmd_init(config: Config, args) -> None:
@@ -271,6 +333,10 @@ def main(argv=None) -> None:
     p.add_argument("--submit", dest="dry_run", action="store_false",
                    help="force real submissions (override config)")
     p.add_argument("--headed", action="store_true", help="run WhatsApp browser headful (debugging)")
+    p.add_argument("--no-ack", action="store_true",
+                   help="process existing messages too (don't auto-acknowledge)")
+    p.add_argument("--no-ack-last", action="store_true",
+                   help="ack all messages except the most recent one (process only the last)")
     p.add_argument("-v", "--verbose", action="store_true", help="also log to console")
 
     p = sub.add_parser("parse-form", help="fetch and parse a Google Form, print fields")
@@ -300,11 +366,19 @@ def main(argv=None) -> None:
 
     sub.add_parser("list-free-models", help="list zero-cost models currently on OpenRouter")
 
-    p = sub.add_parser("state", help="show/clear the processed-message store")
-    p.add_argument("--clear", action="store_true")
+    p = sub.add_parser("state", help="show/clear/acknowledge the processed-message store")
+    p.add_argument("--clear", action="store_true", help="delete the state file entirely")
+    p.add_argument("--ack", action="store_true", help="mark all visible messages in the channel as seen (no processing)")
+    p.add_argument("--headed", action="store_true", help="run headful (for ack)")
 
     sub.add_parser("init", help="check configuration health")
 
+    p = sub.add_parser("completion", help="print shell completion script")
+    p.add_argument("shell", choices=["bash", "zsh", "fish"],
+                    help="target shell")
+
+    if argcomplete:
+        argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
     config = load_config(args.config)
     handlers = {
@@ -320,6 +394,7 @@ def main(argv=None) -> None:
         "list-free-models": cmd_list_free_models,
         "state": cmd_state,
         "init": cmd_init,
+        "completion": cmd_completion,
     }
     handlers[args.command](config, args)
 

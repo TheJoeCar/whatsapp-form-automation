@@ -18,6 +18,11 @@ cp .env.example .env
 
 # 3. Configure config.yaml
 # Set your WhatsApp channel name and adjust any defaults
+
+# 4. (Optional) Enable shell tab-completion
+eval "$(register-python-argcomplete wa)"  # add to ~/.bashrc or ~/.zshrc
+# Or use the built-in command:
+eval "$(wa completion bash)"
 ```
 
 ## Configuration
@@ -65,6 +70,9 @@ alias wa=".venv/bin/python -m src.cli"
 
 # Verification
 wa init                      # check config health
+wa completion bash           # print bash completion script
+wa completion zsh            # print zsh completion script
+wa completion fish           # print fish completion script
 wa check-llm                 # verify the model responds
 wa list-free-models          # see available zero-cost models
 
@@ -80,10 +88,13 @@ wa debug-whatsapp            # selector diagnostics if extraction breaks
 wa list-channels             # list all chats/channels with their names
 
 # The pipeline
-wa run                       # one poll cycle (dry-run by default)
+wa run                       # one poll cycle (auto-acks existing messages by default)
 wa run --loop                # keep polling until Ctrl+C
 wa run --submit              # actually submit (only after dry-run looks right)
-wa state --clear             # reset processed messages
+wa run --no-ack              # process existing messages too (don't auto-ack)
+wa run --no-ack-last         # ack all but the last message (process only the latest)
+wa state --clear             # reset processed messages (re-process everything)
+wa state --ack               # mark visible channel messages as seen (no submission)
 ```
 
 ## How It Works
@@ -95,6 +106,24 @@ wa state --clear             # reset processed messages
 5. If it qualifies, the LLM generates test values (validated against real options)
 6. Values are submitted via HTTP POST to the form's `formResponse` endpoint
 7. The result is logged and the message is marked as processed
+
+### Auto-Acknowledgment
+
+By default, when the pipeline starts it automatically acknowledges (marks as seen)
+all currently visible messages in the channel before processing. This prevents
+old form links from being re-processed on every restart. Only messages that
+arrive *after* the acknowledgment are handled.
+
+This behavior can be overridden:
+
+| Flag | Effect |
+|---|---|
+| (default) | Auto-ack existing messages, process only new ones |
+| `--no-ack` | Process all visible messages including old ones |
+| `--no-ack-last` | Ack all messages except the most recent; process only the last |
+
+The `wa state --ack` and `wa state --clear` commands provide manual control
+over the processed-message store.
 
 ## Swapping in a Local Model
 
@@ -124,6 +153,9 @@ No API key needed for Ollama; same code path.
   heuristics when the LLM fails, so the pipeline still works.
 - **Submission rejected**: single-page forms only. Check the form is accepting
   responses and CAPTCHA isn't blocking the submission.
+- **Old form links getting re-processed**: by default the pipeline auto-acks
+  all visible messages before processing, so only new messages are handled.
+  Use `wa run --no-ack` if you intentionally want to re-process old links.
 - **LLM refuses to fill the form**: the free model may safety-filter prompts.
   The filler falls back to no values (nothing submitted). Use neutral language
   in `requirements.md` (e.g. "test data" not "personal data").

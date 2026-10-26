@@ -41,6 +41,7 @@ class Pipeline:
         self.requirements_text = self._load_requirements(config)
         self.llm = self._build_llm()
         self._headless = headless
+        self._auto_acked = False
 
     def _load_requirements(self, config: Config) -> str | None:
         text = load_requirements(config.forms.requirements_file)
@@ -68,15 +69,20 @@ class Pipeline:
     # ------------------------------------------------------------------ #
     # Main loops
 
-    def run_once(self) -> int:
+    def run_once(self, *, no_ack: bool = False, no_ack_last: bool = False) -> int:
         """One poll cycle (launches its own browser). Returns messages handled."""
         headless = self._headless if self._headless is not None else self.config.whatsapp.headless
         with WhatsAppMonitor(self.config.whatsapp, headless=headless) as monitor:
             if not monitor.wait_ready(quiet=False):
                 raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
+            if not no_ack:
+                if no_ack_last:
+                    self._ack_all_except_last(monitor)
+                else:
+                    self._ack_existing(monitor)
             return self._poll_once(monitor)
 
-    def run_forever(self) -> None:
+    def run_forever(self, *, no_ack: bool = False, no_ack_last: bool = False) -> None:
         """Keep one browser session open and poll on an interval."""
         interval = self.config.whatsapp.poll_interval_seconds
         headless = self._headless if self._headless is not None else self.config.whatsapp.headless
@@ -87,6 +93,12 @@ class Pipeline:
                     if not monitor.wait_ready(quiet=False):
                         raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
                     log.info("monitor ready - watching %r", self.config.whatsapp.channel)
+                    if not no_ack and not self._auto_acked:
+                        if no_ack_last:
+                            self._ack_all_except_last(monitor)
+                        else:
+                            self._ack_existing(monitor)
+                        self._auto_acked = True
                     while True:
                         handled = self._poll_once(monitor)
                         if handled:
@@ -97,6 +109,38 @@ class Pipeline:
             except Exception:
                 log.exception("poll cycle failed - reopening browser next interval")
                 time.sleep(interval)
+
+    def _ack_existing(self, monitor: WhatsAppMonitor) -> None:
+        """Mark all currently visible messages as seen without processing them."""
+        if not monitor.open_channel(self.config.whatsapp.channel):
+            return
+        messages = monitor.read_messages()
+        acked = 0
+        for msg in messages:
+            if not self.state.seen(msg.message_id):
+                self.state.mark(msg.message_id, "acknowledged")
+                acked += 1
+        if acked:
+            self.state.save()
+            log.info("acknowledged %d existing message(s)", acked)
+
+    def _ack_all_except_last(self, monitor: WhatsAppMonitor) -> None:
+        """Mark all visible messages as seen except the most recent one."""
+        if not monitor.open_channel(self.config.whatsapp.channel):
+            return
+        messages = monitor.read_messages()
+        if not messages:
+            return
+        # Keep the last message un-acked so it gets processed.
+        to_ack = messages[:-1]
+        acked = 0
+        for msg in to_ack:
+            if not self.state.seen(msg.message_id):
+                self.state.mark(msg.message_id, "acknowledged")
+                acked += 1
+        if acked:
+            self.state.save()
+            log.info("acknowledged %d message(s), keeping last message pending", acked)
 
     def _poll_once(self, monitor: WhatsAppMonitor) -> int:
         """Poll using an already-open monitor. Returns messages handled."""
