@@ -19,8 +19,8 @@ generate a plausible fake value appropriate for the form type.
 
 ## What Kinds of Forms I Fill
 
-Describe the types of forms you typically fill out (e.g. climbing trip
-forms, event registrations, surveys). The automation uses this to
+Describe the types of forms you typically fill out (e.g. event
+registrations, surveys, sign-up forms). The automation uses this to
 decide if a form qualifies.
 
 ## Rules

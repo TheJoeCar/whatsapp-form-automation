@@ -1,24 +1,23 @@
 # WhatsApp → Google Forms Automation
 
-Watches one WhatsApp channel you control for new messages containing Google
-Forms links, fills the form with test data (LLM-assisted), and submits it.
-**For testing forms you own** — dry-run is on by default.
-
-See `plan.md` for the architecture, milestones and risk notes.
+A lightweight automation tool that monitors a WhatsApp channel for Google Forms
+links, fills the form with test data, and submits it. Built for testing your
+own forms — dry-run is on by default.
 
 ## Setup
 
 ```bash
-# 1. Environment (uv-managed venv, Python 3.12 for wheel compatibility)
+# 1. Create a virtual environment
 uv venv --python 3.12
 uv pip install -r requirements.txt --python .venv/bin/python
 .venv/bin/python -m playwright install chromium
 
-# 2. LLM: copy .env.example to .env and add your OpenRouter API key
-#    (free models - no cost. Key at https://openrouter.ai/keys)
-cp .env.example .env && $EDITOR .env
+# 2. Add your OpenRouter API key
+cp .env.example .env
+# Edit .env and paste your key from https://openrouter.ai/keys
 
-# 3. Point config.yaml at your channel: whatsapp.channel
+# 3. Configure config.yaml
+# Set your WhatsApp channel name and adjust any defaults
 ```
 
 ## Configuration
@@ -27,89 +26,86 @@ Two files control behavior:
 
 **`config.yaml`** — plumbing (model, channel, selectors, dry-run default).
 
-**`requirements.md`** — *your requirements document*: a natural-language
-description of who you are, what forms you fill, and any constraints.
-The LLM reads this to decide if a form qualifies and what values to use.
-
-The requirements document is flexible — write it in plain English.
-The LLM interprets it to:
-- Decide if a form matches what you'd fill out
-- Generate appropriate test values for each field
-- Respect constraints (e.g. "never write placeholder text")
+**`requirements.md`** — a natural-language description of who you are and what
+forms you fill. The automation reads this to decide if a form qualifies and
+what values to use.
 
 Example `requirements.md`:
 ```markdown
 ## Who I Am (Test Persona)
-- **Name:** Joe Bobby
-- **Email:** joe.bobby@example.com
+- **Name:** Your Name
+- **Email:** your@email.com
 - **Phone:** +15551234567
 
 ## What Kinds of Forms I Fill
-I mainly fill out climbing trip forms. These typically ask about
-personal info, climbing experience, and waivers.
+Describe the types of forms you typically fill out here.
 
 ## Rules
-- Only fill forms I would realistically sign up for.
+- Only fill forms you would realistically sign up for.
 - Answer required questions first.
 - Never write placeholder text into required fields.
 - For multiple-choice fields, always pick a real option.
 ```
 
-If `requirements.md` is missing the pipeline falls back to legacy test mode
-(deterministic heuristics, every form filled) with a logged warning.
+If `requirements.md` is missing, the pipeline falls back to deterministic
+heuristics (every form is filled) with a logged warning.
 
-| config.yaml | What | Default |
+| Setting | Description | Default |
 |---|---|---|
-| `llm` | provider, model, endpoint | OpenRouter, `openrouter/free` (auto-picks a free model) |
-| `whatsapp` | channel name, poll interval, session dir, selectors | 60s polling, headful (WhatsApp Web is unreliable headless) |
-| `forms.requirements_file` | path to the requirements document | `requirements.md` |
-| `pipeline` | state file, log file, **`dry_run`** | **dry run ON** |
+| `llm.model` | Model to use for value generation | `openrouter/free` |
+| `whatsapp.channel` | WhatsApp channel name to monitor | *(set in config)* |
+| `whatsapp.poll_interval_seconds` | Seconds between polls | `60` |
+| `forms.requirements_file` | Path to requirements document | `requirements.md` |
+| `pipeline.dry_run` | If `true`, no submissions are made | `true` |
 
 ## Usage
 
 ```bash
 alias wa=".venv/bin/python -m src.cli"
 
-wa init                 # config health check
-wa check-llm            # tiny prompt to verify the model works
-wa list-free-models     # see which free models exist right now
+# Verification
+wa init                      # check config health
+wa check-llm                 # verify the model responds
+wa list-free-models          # see available zero-cost models
 
-# Requirements + forms (no WhatsApp involved)
+# Form testing (no WhatsApp needed)
 wa check-requirements <url>  # does the form match requirements.md?
-wa parse-form <url>          # show how the parser reads your form - calibrate here
-wa fill-form <url>           # print the payload that would be submitted (no submit)
+wa parse-form <url>          # show how the parser reads your form
+wa fill-form <url>           # print the payload that would be submitted
 wa submit-form <url>         # parse + fill + submit (asks for confirmation)
 
 # WhatsApp
-wa login-whatsapp       # ONE TIME: headful browser opens, scan the QR
-wa debug-whatsapp       # selector diagnostics if extraction breaks
-wa list-channels        # list all chats/channels with their exact names
+wa login-whatsapp            # ONE TIME: scan the QR code
+wa debug-whatsapp            # selector diagnostics if extraction breaks
+wa list-channels             # list all chats/channels with their names
 
-# The actual pipeline
-wa run                  # one poll cycle (dry run by default)
-wa run --loop           # keep polling until Ctrl+C
-wa run --submit         # really submit (only after dry-run looks right)
-wa state --clear        # forget processed messages (re-process on next poll)
+# The pipeline
+wa run                       # one poll cycle (dry-run by default)
+wa run --loop                # keep polling until Ctrl+C
+wa run --submit              # actually submit (only after dry-run looks right)
+wa state --clear             # reset processed messages
 ```
 
-The flow: new messages in the configured channel → URL extraction → Google
-Forms link check (incl. `forms.gle` short links) → parse form → **requirements
-gate** (LLM reads `requirements.md` to decide if the form qualifies) → fill
-with test data (LLM generates values, validated against real options; falls
-back to deterministic heuristics if the LLM is unavailable or refuses) →
-POST to the form's `formResponse` endpoint → result logged, message marked
-processed in `state/processed.json`. Forms failing the gate are skipped with
-the reason in the log.
+## How It Works
 
-## Swapping in a local model later (Ollama)
+1. The monitor opens WhatsApp Web and watches your configured channel
+2. New messages are scanned for Google Forms links (including `forms.gle` short links)
+3. Each form is parsed to extract fields, types, and options
+4. The LLM reads `requirements.md` and decides if the form qualifies
+5. If it qualifies, the LLM generates test values (validated against real options)
+6. Values are submitted via HTTP POST to the form's `formResponse` endpoint
+7. The result is logged and the message is marked as processed
 
-The LLM client is OpenAI-compatible, so switching is two config lines:
+## Swapping in a Local Model
+
+The LLM client is OpenAI-compatible, so switching to a local Ollama model is a
+two-line config change:
 
 ```yaml
 llm:
   provider: ollama
   base_url: http://localhost:11434/v1
-  model: llama3.1:8b   # whatever you pull
+  model: llama3.1:8b
 ```
 
 No API key needed for Ollama; same code path.
@@ -117,20 +113,55 @@ No API key needed for Ollama; same code path.
 ## Troubleshooting
 
 - **Form fields show `(title not found)`** or wrong types: Google changed their
-  DOM. Run `wa parse-form <url>`, compare with the real form, adjust the
-  heuristics in `src/forms/parser.py` (`_title_for_field`, `_label_for_input`).
-- **No messages found / search fails**: run `wa debug-whatsapp --headed`, check the
-  selector counts against the verified list in `src/whatsapp/monitor.py`
-  (chat rows `[data-testid="chat-list"] div[role="row"]`, search `input[role="textbox"]`,
-  messages `[data-testid^="conv-msg-"]`). WhatsApp changes its DOM periodically;
-  `scripts/inspect_whatsapp.py` and `scripts/inspect_chat.py` dump the live structure.
-- **LLM errors / rate limits**: free models have rate limits; `wa
-  list-free-models` and pick another id in config. The filler falls back to
-  deterministic heuristics when the LLM fails, so the pipeline still works.
-- **Submission rejected**: single-page forms only for now (multi-page needs a
-  POST per page). Check the form is accepting responses and CAPTCHA isn't up.
-- **LLM refuses to fill the form**: the free OpenRouter model may safety-filter
-  prompts that mention PII or identity. The filler falls back to deterministic
-  heuristics in this case, which still produces valid values. If you want the LLM
-  to fill the form, make sure `requirements.md` uses neutral language (e.g.
-  "test data" not "personal data").
+  DOM. Run `wa parse-form <url>` to inspect, then adjust the heuristics in
+  `src/forms/parser.py`.
+- **No messages found**: run `wa debug-whatsapp --headed` to check selector
+  counts, or `wa list-channels` to verify the channel name. WhatsApp changes
+  its DOM periodically — `scripts/inspect_whatsapp.py` and
+  `scripts/inspect_chat.py` dump the live structure.
+- **LLM errors / rate limits**: free models have rate limits; use
+  `wa list-free-models` to switch models. The filler falls back to deterministic
+  heuristics when the LLM fails, so the pipeline still works.
+- **Submission rejected**: single-page forms only. Check the form is accepting
+  responses and CAPTCHA isn't blocking the submission.
+- **LLM refuses to fill the form**: the free model may safety-filter prompts.
+  The filler falls back to no values (nothing submitted). Use neutral language
+  in `requirements.md` (e.g. "test data" not "personal data").
+
+## Project Structure
+
+```
+whatsapp-form-automation/
+├── config.yaml              # plumbing settings
+├── requirements.md          # your personal requirements (gitignored)
+├── requirements.md.example  # template for new users
+├── src/
+│   ├── cli.py               # command-line entry point
+│   ├── config.py            # configuration loader
+│   ├── pipeline.py          # orchestration: poll → parse → fill → submit
+│   ├── requirements.py      # requirements document loader & LLM prompts
+│   ├── state.py             # processed-message store
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   └── client.py        # OpenAI-compatible LLM client
+│   ├── forms/
+│   │   ├── __init__.py
+│   │   ├── parser.py        # form structure extraction
+│   │   ├── filler.py        # value generation + validation
+│   │   └── submitter.py     # formResponse POST + success detection
+│   └── whatsapp/
+│       ├── __init__.py
+│       └── monitor.py       # Playwright session + message reading
+├── scripts/
+│   ├── inspect_whatsapp.py  # dump live WhatsApp DOM structure
+│   └── inspect_chat.py      # inspect a specific chat's message DOM
+├── tests/                   # offline unit tests
+├── data/                    # browser profile (gitignored)
+├── logs/                    # pipeline logs (gitignored)
+└── state/                   # processed messages (gitignored)
+```
+
+## License
+
+MIT
+```
