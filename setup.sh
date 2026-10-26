@@ -13,27 +13,24 @@ VENV_BIN="$SCRIPT_DIR/.venv/bin"
 # Remove old alias that interferes with argcomplete
 if grep -q 'alias wa=' ~/.bashrc 2>/dev/null; then
     sed -i '/alias wa=/d' ~/.bashrc
-    echo "Removed old alias wa= from ~/.bashrc"
 fi
 
 # Add venv bin to PATH if not already there
 if [[ ":$PATH:" != *":$VENV_BIN:"* ]]; then
     export PATH="$VENV_BIN:$PATH"
-    echo "Added $VENV_BIN to PATH"
 fi
 
 # Create a symlink for wa in the venv bin so it's findable for completion
 if [[ ! -L "$VENV_BIN/wa" ]]; then
     ln -sf "$SCRIPT_DIR/wa" "$VENV_BIN/wa"
-    echo "Created symlink: $VENV_BIN/wa -> $SCRIPT_DIR/wa"
 fi
 
 # Register tab-completion for wa
 if command -v register-python-argcomplete &>/dev/null; then
     eval "$(register-python-argcomplete wa)"
-    echo "Tab-completion registered for 'wa'"
-else
-    echo "Warning: register-python-argcomplete not found, skipping completion setup"
 fi
 
-echo "Setup complete. Run 'wa --help' to get started."
+# Only print messages when run directly (not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "Setup complete. Run 'wa --help' to get started."
+fi
