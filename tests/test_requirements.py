@@ -54,13 +54,13 @@ MODERN_HTML = """
 SAMPLE_REQUIREMENTS = """
 ## Who I Am (Test Persona)
 
-- **Name:** Joe Bobby
-- **Email:** joe.bobby@example.com
+- **Name:** Test User
+- **Email:** test.user@example.com
 
 ## What Kinds of Forms I Fill
 
-I mainly fill out climbing trip forms. These typically ask about
-personal info, climbing experience, and waivers.
+I mainly fill out event registration forms, surveys, and sign-up forms.
+These typically ask about personal info, experience, and preferences.
 
 ## Rules
 
@@ -98,7 +98,7 @@ def test_extract_json_with_prose():
 def test_requirements_prompt():
     prompt = requirements_prompt(SAMPLE_REQUIREMENTS)
     assert "=== FORM REQUIREMENTS" in prompt
-    assert " climbing trip" in prompt.lower()
+    assert "event registration" in prompt.lower()
     assert "=== END REQUIREMENTS ===" in prompt
 
 
@@ -109,7 +109,7 @@ def test_evaluate_form_prompt():
         for f in form.fields
     ]
     prompt = evaluate_form_prompt(SAMPLE_REQUIREMENTS, form.title or "", field_summaries)
-    assert "climbing trip" in prompt.lower()
+    assert "event registration" in prompt.lower()
     assert "entry.1111111111" in prompt
 
 
@@ -120,7 +120,7 @@ def test_fill_form_prompt():
         for f in form.fields
     ]
     prompt = fill_form_prompt(SAMPLE_REQUIREMENTS, form.title or "", field_summaries)
-    assert "climbing trip" in prompt.lower()
+    assert "event registration" in prompt.lower()
     assert "entry.1111111111" in prompt
 
 
@@ -153,5 +153,5 @@ def test_load_requirements_file(tmp_path):
     doc.write_text(SAMPLE_REQUIREMENTS, encoding="utf-8")
     text = load_requirements(doc)
     assert text is not None
-    assert "climbing trip" in text.lower()
-    assert "Joe Bobby" in text
+    assert "event registration" in text.lower()
+    assert "Test User" in text

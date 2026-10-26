@@ -110,15 +110,15 @@ def test_extract_json_with_prose():
 def test_filler_with_fake_llm():
     form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
     reply = (
-        '{"entry.1111111111": "Testy McTestface", '
-        '"entry.2222222222": "testy@example.com", '
+        '{"entry.1111111111": "Test User", '
+        '"entry.2222222222": "test.user@example.com", '
         '"entry.3333333333": "No", '
         '"entry.4444444444": "Banana", '
         '"entry.5555555555": "A comment", '
         '"entry.9999999999": "bogus"}'
     )
     values, warnings = fill_form(form, llm=FakeLLM(reply))
-    assert values["entry.1111111111"] == "Testy McTestface"
+    assert values["entry.1111111111"] == "Test User"
     assert values["entry.3333333333"] == "No"
     assert values["entry.4444444444"] == "Banana"
     assert "entry.9999999999" not in values  # unknown entry dropped
@@ -137,9 +137,9 @@ def test_filler_falls_back_when_whole_reply_invalid():
 
 def test_filler_partial_llm_success():
     form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
-    reply = '{"entry.1111111111": "Testy", "entry.3333333333": "Bogus"}'
+    reply = '{"entry.1111111111": "Test User", "entry.3333333333": "Bogus"}'
     values, warnings = fill_form(form, llm=FakeLLM(reply))
-    assert values["entry.1111111111"] == "Testy"  # valid LLM value kept
+    assert values["entry.1111111111"] == "Test User"  # valid LLM value kept
     assert "entry.3333333333" not in values  # invalid option dropped, optional -> stays empty
     assert any("not one of" in w for w in warnings)
 
