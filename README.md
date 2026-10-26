@@ -24,7 +24,7 @@ cp .env.example .env
 # Set your WhatsApp channel name and adjust any defaults
 
 # 4. (Optional) Enable shell tab-completion
-source setup.sh  # adds venv to PATH, symlinks wa, registers completion
+source setup.sh  # adds venv to PATH, symlinks wa, registers completion, removes old alias
 # Add `source /path/to/setup.sh` to ~/.bashrc for persistence
 ```
 
@@ -159,8 +159,10 @@ No API key needed for Ollama; same code path.
 - **Old form links getting re-processed**: by default the pipeline auto-acks
   all visible messages before processing, so only new messages are handled.
   Use `wa run --no-ack` if you intentionally want to re-process old links.
-- **Tab-completion not working**: run `source setup.sh` to set up PATH
-  and register completion. Add it to your `~/.bashrc` for persistence.
+- **Tab-completion not working**: the old `alias wa=...` in your shell config
+  may be interfering. Run `source setup.sh` which removes the old alias and
+  registers completion properly. Add `source /path/to/setup.sh` to your
+  `~/.bashrc` for persistence.
 - **LLM refuses to fill the form**: the free model may safety-filter prompts.
   The filler falls back to no values (nothing submitted). Use neutral language
   in `requirements.md` (e.g. "test data" not "personal data").

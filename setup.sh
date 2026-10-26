@@ -10,6 +10,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_BIN="$SCRIPT_DIR/.venv/bin"
 
+# Remove old alias that interferes with argcomplete
+if grep -q 'alias wa=' ~/.bashrc 2>/dev/null; then
+    sed -i '/alias wa=/d' ~/.bashrc
+    echo "Removed old alias wa= from ~/.bashrc"
+fi
+
 # Add venv bin to PATH if not already there
 if [[ ":$PATH:" != *":$VENV_BIN:"* ]]; then
     export PATH="$VENV_BIN:$PATH"

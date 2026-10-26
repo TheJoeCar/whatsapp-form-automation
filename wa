@@ -12,25 +12,21 @@ Usage:
 
 import os
 import sys
-import subprocess
 from pathlib import Path
 
 
 def main() -> None:
-    # Find the venv Python relative to this script's location.
-    # This ensures the correct Python with all dependencies is used.
     project_root = Path(__file__).resolve().parent
     venv_python = project_root / ".venv" / "bin" / "python"
 
     if not venv_python.exists():
-        # Fall back to system python3
-        python = "python3"
+        python = sys.executable
     else:
         python = str(venv_python)
 
-    cmd = [python, "-m", "src.cli"] + sys.argv[1:]
-    result = subprocess.run(cmd)
-    sys.exit(result.returncode)
+    # Use execv to replace this process, preserving file descriptors
+    # (argcomplete uses FDs 8 and 9 for communication with the shell)
+    os.execv(python, [python, "-m", "src.cli"] + sys.argv[1:])
 
 
 if __name__ == "__main__":
