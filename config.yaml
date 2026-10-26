@@ -1,0 +1,53 @@
+# WhatsApp Form Automation configuration
+# Secrets (API keys) live in .env, not here.
+
+llm:
+  # Provider hint. "openrouter" = hosted free models now,
+  # "ollama" = local model later (same client, different base_url).
+  provider: openrouter
+  # OpenAI-compatible endpoint.
+  #   OpenRouter: https://openrouter.ai/api/v1
+  #   Ollama:     http://localhost:11434/v1
+  base_url: https://openrouter.ai/api/v1
+  # "openrouter/free" auto-routes to an available free model.
+  # Specific free models (see: python -m src.cli list-free-models), e.g.:
+  #   google/gemma-4-31b-it:free
+  #   nvidia/nemotron-3-super-120b-a12b:free
+  model: openrouter/free
+  # Environment variable that holds the API key (ignored for ollama).
+  api_key_env: OPENROUTER_API_KEY
+  temperature: 0.2
+  max_retries: 3
+
+whatsapp:
+  # Exact chat/channel name as shown in WhatsApp Web.
+  channel: "My Channel"
+  poll_interval_seconds: 60
+  session_dir: data/whatsapp_session
+  # Login must be headful (QR scan). Monitoring can run headless afterwards.
+  headless: true
+  max_messages_per_poll: 25
+  # DOM selectors, best-effort. WhatsApp Web changes class names often;
+  # role-based selectors are tried first, then these. If extraction breaks,
+  # run `python -m src.cli debug-whatsapp` and adjust.
+  selectors:
+    message_row: 'div[data-id]'
+    message_text: 'span.selectable-text'
+
+forms:
+  # Test persona the LLM should use when the form asks for personal data.
+  # Keep it clearly fake — these are your own test submissions.
+  test_data:
+    name: "Testy McTestface"
+    email: "testy.mctestface@example.com"
+    phone: "+15550000001"
+    organization: "Automated Testing Co"
+  # Prefer LLM-generated values; if the LLM is unavailable, fall back to
+  # deterministic heuristics (still produces a valid payload).
+  use_llm_fallback: true
+
+pipeline:
+  state_file: state/processed.json
+  log_file: logs/pipeline.log
+  # Safety: dry-run prints what it *would* do. Set false only after testing.
+  dry_run: true

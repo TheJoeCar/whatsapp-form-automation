@@ -1,0 +1,13 @@
+# Secrets
+.env
+
+# Runtime data (browser profile, logs, state)
+data/
+logs/
+state/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
