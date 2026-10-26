@@ -23,8 +23,11 @@ cp .env.example .env
 # 3. Configure config.yaml
 # Set your WhatsApp channel name and adjust any defaults
 
-# 4. (Optional) Enable shell tab-completion (requires the `wa` wrapper script)
-eval "$(wa completion bash)"  # add to ~/.bashrc for persistence
+# 4. (Optional) Enable shell tab-completion
+# Add the venv bin to your PATH (or symlink wa to a PATH directory):
+export PATH="$PWD/.venv/bin:$PATH"
+# Then register completion:
+eval "$(register-python-argcomplete wa)"  # add to ~/.bashrc for persistence
 ```
 
 ## Configuration
@@ -158,9 +161,10 @@ No API key needed for Ollama; same code path.
 - **Old form links getting re-processed**: by default the pipeline auto-acks
   all visible messages before processing, so only new messages are handled.
   Use `wa run --no-ack` if you intentionally want to re-process old links.
-- **Tab-completion not working**: the `wa` wrapper script must be executable
-  and available in your PATH. Run `chmod +x wa` and either add it to your PATH
-  or use `./wa` directly. Then run `eval "$(wa completion bash)"` to enable completion.
+- **Tab-completion not working**: make sure `.venv/bin` is in your PATH
+  (`export PATH="$PWD/.venv/bin:$PATH"`) and that `register-python-argcomplete`
+  is available. Then run `eval "$(register-python-argcomplete wa)"` to enable
+  completion. Add this to your `~/.bashrc` or `~/.zshrc` for persistence.
 - **LLM refuses to fill the form**: the free model may safety-filter prompts.
   The filler falls back to no values (nothing submitted). Use neutral language
   in `requirements.md` (e.g. "test data" not "personal data").
