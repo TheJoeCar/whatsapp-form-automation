@@ -1,0 +1,46 @@
+# Form Requirements
+
+This file describes who you are and what forms you fill, so the
+automation can decide if a form qualifies and what values to use.
+
+Edit this file with your own information before running the script.
+
+## Who I Am (Test Persona)
+
+The values below are used when a form asks about you.
+
+- **Name:** Your Name
+- **Email:** your@email.com
+- **Phone:** +15551234567
+- **Organization:** Your Organization
+
+If a question doesn't match any of the above, the automation will
+generate a plausible fake value appropriate for the form type.
+
+## What Kinds of Forms I Fill
+
+Describe the types of forms you typically fill out (e.g. climbing trip
+forms, event registrations, surveys). The automation uses this to
+decide if a form qualifies.
+
+## Rules
+
+- Only fill forms you would realistically sign up for.
+- Answer required questions first.
+- Never write placeholder text into required fields.
+- For multiple-choice fields, always pick a real option.
+- For checkboxes, pick 1–3 real options.
+
+## What NOT to Fill
+
+Skip the entire form if any question asks for:
+- Passwords or credentials
+- Social security numbers or national IDs
+- Credit card or bank details
+
+## How to Use
+
+1. Copy this file to `requirements.md` (or edit it in place)
+2. Fill in your identity and rules
+3. Run `wa check-requirements <form-url>` to test
+4. Run `wa run --loop` to monitor and auto-fill qualifying forms

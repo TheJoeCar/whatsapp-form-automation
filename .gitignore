@@ -1,6 +1,9 @@
 # Secrets
 .env
 
+# User configuration (personalized, not committed)
+requirements.md
+
 # Runtime data (browser profile, logs, state)
 data/
 logs/
