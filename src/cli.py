@@ -239,6 +239,27 @@ def cmd_state(config: Config, args) -> None:
     if args.clear:
         store.path.unlink(missing_ok=True)
         print("state cleared")
+    if args.ack:
+        headless = not args.headed if hasattr(args, 'headed') else config.whatsapp.headless
+        monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
+        monitor.start()
+        try:
+            if not monitor.wait_ready(quiet=False):
+                print("WhatsApp Web not ready — are you logged in?")
+                return
+            if not monitor.open_channel(config.whatsapp.channel):
+                print(f"could not open channel {config.whatsapp.channel!r}")
+                return
+            messages = monitor.read_messages()
+            newly = 0
+            for msg in messages:
+                if not store.seen(msg.message_id):
+                    store.mark(msg.message_id, "acknowledged")
+                    newly += 1
+            store.save()
+            print(f"acknowledged {newly} message(s) ({len(messages)} total visible)")
+        finally:
+            monitor.stop()
 
 
 def cmd_init(config: Config, args) -> None:
@@ -300,8 +321,10 @@ def main(argv=None) -> None:
 
     sub.add_parser("list-free-models", help="list zero-cost models currently on OpenRouter")
 
-    p = sub.add_parser("state", help="show/clear the processed-message store")
-    p.add_argument("--clear", action="store_true")
+    p = sub.add_parser("state", help="show/clear/acknowledge the processed-message store")
+    p.add_argument("--clear", action="store_true", help="delete the state file entirely")
+    p.add_argument("--ack", action="store_true", help="mark all visible messages in the channel as seen (no processing)")
+    p.add_argument("--headed", action="store_true", help="run headful (for ack)")
 
     sub.add_parser("init", help="check configuration health")
 

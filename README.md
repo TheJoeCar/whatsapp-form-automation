@@ -83,7 +83,8 @@ wa list-channels             # list all chats/channels with their names
 wa run                       # one poll cycle (dry-run by default)
 wa run --loop                # keep polling until Ctrl+C
 wa run --submit              # actually submit (only after dry-run looks right)
-wa state --clear             # reset processed messages
+wa state --clear             # reset processed messages (re-process everything)
+wa state --ack               # mark visible channel messages as seen (no submission)
 ```
 
 ## How It Works
@@ -95,6 +96,21 @@ wa state --clear             # reset processed messages
 5. If it qualifies, the LLM generates test values (validated against real options)
 6. Values are submitted via HTTP POST to the form's `formResponse` endpoint
 7. The result is logged and the message is marked as processed
+
+### Acknowledging Existing Messages
+
+When the state file is empty (first run or after `--clear`), the monitor will
+process any form links it finds in the visible channel history — including links
+posted before the script started. To avoid this, run `--ack` after setup to
+mark all currently visible messages as seen:
+
+```bash
+wa state --ack   # marks visible messages as seen, no submission
+wa run           # now only new messages are processed
+```
+
+This is recommended after first login or whenever you want to start fresh
+without re-processing old links.
 
 ## Swapping in a Local Model
 
@@ -124,6 +140,7 @@ No API key needed for Ollama; same code path.
   heuristics when the LLM fails, so the pipeline still works.
 - **Submission rejected**: single-page forms only. Check the form is accepting
   responses and CAPTCHA isn't blocking the submission.
+- **Old form links getting re-processed**: when the state file is empty (first run or after `--clear`), the monitor processes all visible messages in the channel, including old links. Run `wa state --ack` after setup to mark existing messages as seen. Only new messages arriving after that will be processed.
 - **LLM refuses to fill the form**: the free model may safety-filter prompts.
   The filler falls back to no values (nothing submitted). Use neutral language
   in `requirements.md` (e.g. "test data" not "personal data").
