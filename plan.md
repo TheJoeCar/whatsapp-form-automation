@@ -76,14 +76,14 @@ whatsapp-form-automation/
 ├── plan.md                  # this file
 ├── README.md                # setup + usage
 ├── requirements.txt         # python deps
-├── requirements.yaml        # form requirements document: identity + rules
+├── requirements.md          # form requirements document (natural language)
 ├── config.yaml              # checked in, no secrets (api key comes from .env)
 ├── .env.example
 ├── .gitignore
 ├── src/
 │   ├── cli.py               # entry point (run / parse-form / fill-form / submit-form / login / debug)
 │   ├── config.py            # config + .env loading
-│   ├── requirements.py      # requirements document: identity, rules, gate (evaluate_form)
+│   ├── requirements.py      # loads requirements.md, builds LLM prompts
 │   ├── state.py             # processed-message store (JSON)
 │   ├── llm/client.py        # OpenAI-compatible client (OpenRouter/Ollama) + free-model listing
 │   ├── forms/parser.py      # URL resolution, entry-id extraction, field types/options
@@ -105,7 +105,7 @@ whatsapp-form-automation/
 - [x] **M2 — WhatsApp monitor**: login script (QR once), channel search, message polling, debug command
 - [x] **M3 — Pipeline + CLI**: `run --once` end-to-end in dry-run, then real submit
 - [x] **M3.5 — Requirements document**: `requirements.md` (natural-language markdown) + LLM-driven
-      form qualification and value generation, `check-requirements` command, `never_guess` abort instead of placeholders
+      form qualification and value generation, `check-requirements` command
 - [ ] **M4 — Hardening**: run against real channel for a few days; retry/backoff tuning;
       switch LLM to Ollama on the home lab when ready
 
@@ -115,7 +115,7 @@ whatsapp-form-automation/
 |---|---|
 | WhatsApp Web DOM changes break extraction | Role-based selectors first, class-based fallbacks, selectors in config, `debug-whatsapp` dumps candidates |
 | Form parser misreads field types | `parse-form` prints everything it found; filler validates option membership before submitting |
-| Free OpenRouter models refuse PII-heavy prompts | Identity heuristics fallback produces correct payloads even when LLM is blocked; `never_guess` means no placeholders are ever invented |
+| Free OpenRouter models refuse PII-heavy prompts | Filler falls back to deterministic heuristics, which still produces valid payloads |
 | Duplicate submissions from re-polled messages | `state/processed.json` keyed on message id |
 | Accidental real submissions | dry-run default everywhere; `submit-form` asks for confirmation |
 | WhatsApp account flags automation | Human-pace polling (default 60s), only reading one channel, no bulk messaging actions |
@@ -123,9 +123,9 @@ whatsapp-form-automation/
 ## Test checklist
 
 1. `check-llm` → model responds
-2. Edit `requirements.yaml`: identity + rules; `check-requirements <url>` → gate verdict + answer sources
+2. Edit `requirements.md` with your identity and rules; `check-requirements <url>` → gate verdict
 3. `parse-form <your form url>` → all fields/types/options correct
-4. `fill-form <url>` (dry run) → payload sensible, options valid, required-only when `fill_optional: false`
+4. `fill-form <url>` (dry run) → payload sensible, options valid
 5. `submit-form <url> --yes` on a throwaway form you own → response recorded
 6. `run --once` with the monitor → dry-run plan printed for the channel message
 7. Real run on a test form, then flip off dry-run for the real target

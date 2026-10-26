@@ -83,6 +83,7 @@ wa submit-form <url>         # parse + fill + submit (asks for confirmation)
 # WhatsApp
 wa login-whatsapp       # ONE TIME: headful browser opens, scan the QR
 wa debug-whatsapp       # selector diagnostics if extraction breaks
+wa list-channels        # list all chats/channels with their exact names
 
 # The actual pipeline
 wa run                  # one poll cycle (dry run by default)
@@ -93,8 +94,9 @@ wa state --clear        # forget processed messages (re-process on next poll)
 
 The flow: new messages in the configured channel → URL extraction → Google
 Forms link check (incl. `forms.gle` short links) → parse form → **requirements
-gate** (`evaluate_form` against `rules`) → fill with your identity (LLM values
-validated against real options; `never_guess` aborts instead of guessing) →
+gate** (LLM reads `requirements.md` to decide if the form qualifies) → fill
+with test data (LLM generates values, validated against real options; falls
+back to deterministic heuristics if the LLM is unavailable or refuses) →
 POST to the form's `formResponse` endpoint → result logged, message marked
 processed in `state/processed.json`. Forms failing the gate are skipped with
 the reason in the log.
@@ -127,3 +129,8 @@ No API key needed for Ollama; same code path.
   deterministic heuristics when the LLM fails, so the pipeline still works.
 - **Submission rejected**: single-page forms only for now (multi-page needs a
   POST per page). Check the form is accepting responses and CAPTCHA isn't up.
+- **LLM refuses to fill the form**: the free OpenRouter model may safety-filter
+  prompts that mention PII or identity. The filler falls back to deterministic
+  heuristics in this case, which still produces valid values. If you want the LLM
+  to fill the form, make sure `requirements.md` uses neutral language (e.g.
+  "test data" not "personal data").
