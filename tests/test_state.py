@@ -34,6 +34,37 @@ def test_state_store_ack_now_seen(tmp_path):
     assert store.seen("msg-1")
 
 
+def test_state_store_forget_makes_message_new_again(tmp_path):
+    """forget() removes a message so it counts as new again."""
+    store = StateStore(tmp_path / "processed.json")
+    store.mark("msg-1", "submitted")
+    assert store.seen("msg-1")
+
+    assert store.forget("msg-1") is True
+    assert not store.seen("msg-1")
+    assert store.count() == 0
+
+
+def test_state_store_forget_unknown_message(tmp_path):
+    """forget() on a stored message returns False and changes nothing."""
+    store = StateStore(tmp_path / "processed.json")
+    store.mark("msg-1", "submitted")
+
+    assert store.forget("msg-2") is False
+    assert store.seen("msg-1")
+    assert store.count() == 1
+
+
+def test_state_store_forget_persists(tmp_path):
+    """forget() is persisted across store instances."""
+    store = StateStore(tmp_path / "processed.json")
+    store.mark("msg-1", "submitted")
+    store.forget("msg-1")
+
+    store2 = StateStore(tmp_path / "processed.json")
+    assert not store2.seen("msg-1")
+
+
 def test_state_store_count(tmp_path):
     store = StateStore(tmp_path / "processed.json")
     assert store.count() == 0

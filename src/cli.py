@@ -371,7 +371,8 @@ def main(argv=None) -> None:
     p.add_argument("--no-ack", action="store_true",
                    help="process existing messages too (don't auto-acknowledge)")
     p.add_argument("--no-ack-last", action="store_true",
-                   help="ack all messages except the most recent one (process only the last)")
+                   help="ack all messages except the most recent one (process only the last, "
+                        "even if it was handled before)")
     p.add_argument("--channel", default=None,
                    help="override the configured WhatsApp channel")
     p.add_argument("--poll-interval", type=int, default=None,

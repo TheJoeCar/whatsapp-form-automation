@@ -125,7 +125,7 @@ This behavior can be overridden:
 |---|---|
 | (default) | Auto-ack existing messages, process only new ones |
 | `--no-ack` | Process all visible messages including old ones |
-| `--no-ack-last` | Ack all messages except the most recent; process only the last |
+| `--no-ack-last` | Ack all messages except the most recent; process only the last (even if handled in a previous run) |
 | `--channel` | Override the configured WhatsApp channel for this run |
 | `--poll-interval N` | Override the poll interval in seconds for this run |
 

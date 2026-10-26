@@ -151,16 +151,24 @@ class Pipeline:
             log.info("acknowledged %d existing message(s)", acked)
 
     def _ack_all_except_last(self, monitor: WhatsAppMonitor) -> None:
-        """Mark all visible messages as seen except the most recent one."""
+        """Mark all visible messages as seen except the most recent one, which
+        is reset so it gets reprocessed even if it was handled before."""
         if not monitor.open_channel(self._effective_config().channel):
             return
         messages = monitor.read_messages()
         if not messages:
             return
-        # Keep the last message un-acked so it gets processed.
-        to_ack = messages[:-1]
+        # Forget the last message if it was processed in a previous run, so
+        # --no-ack-last genuinely reprocesses it instead of reporting "0 new".
+        last = messages[-1]
+        if self.state.seen(last.message_id):
+            self.state.forget(last.message_id)
+            log.info(
+                "reset last message %s (processed before) so it will be handled again",
+                last.message_id,
+            )
         acked = 0
-        for msg in to_ack:
+        for msg in messages[:-1]:
             if not self.state.seen(msg.message_id):
                 self.state.mark(msg.message_id, "acknowledged")
                 acked += 1

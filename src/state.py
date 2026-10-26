@@ -41,5 +41,16 @@ class StateStore:
             self._data["processed"][message_id] = {"result": result, "ts": time.time()}
         self.save()
 
+    def forget(self, message_id: str) -> bool:
+        """Remove a message from the store so it counts as new again.
+
+        Returns True if the message was previously stored.
+        """
+        with self._lock:
+            existed = self._data["processed"].pop(message_id, None) is not None
+        if existed:
+            self.save()
+        return existed
+
     def count(self) -> int:
         return len(self._data["processed"])

@@ -138,6 +138,64 @@ def test_ack_all_except_last_no_messages(tmp_path):
     assert pipeline.state.count() == 0
 
 
+def test_ack_all_except_last_resets_previously_handled_last(tmp_path):
+    """_ack_all_except_last forgets the last message if it was processed before,
+    so it is genuinely reprocessed (instead of reporting '0 new')."""
+    pipeline = _make_pipeline(tmp_path)
+    # Simulate a previous run that already handled the latest message.
+    pipeline.state.mark("msg-3", "submitted")
+
+    fake_messages = [
+        MagicMock(message_id="msg-1", text="old form 1"),
+        MagicMock(message_id="msg-2", text="old form 2"),
+        MagicMock(message_id="msg-3", text="newest form 3"),
+    ]
+
+    mock_monitor = MagicMock()
+    mock_monitor.open_channel.return_value = True
+    mock_monitor.read_messages.return_value = fake_messages
+
+    pipeline._ack_all_except_last(mock_monitor)
+
+    assert pipeline.state.seen("msg-1")
+    assert pipeline.state.seen("msg-2")
+    assert not pipeline.state.seen("msg-3")  # reset, so _poll_once treats it as new
+
+
+def test_run_once_no_ack_last_reprocesses_old_last_message(tmp_path):
+    """run_once with --no-ack-last processes the last message even though it
+    was already handled in a previous run."""
+    pipeline = _make_pipeline(tmp_path)
+    pipeline.state.mark("msg-2", "submitted")  # previously handled
+
+    fake_messages = [
+        MagicMock(message_id="msg-1", text="https://forms.gle/old"),
+        MagicMock(message_id="msg-2", text="https://forms.gle/new"),
+    ]
+
+    mock_monitor = MagicMock()
+    mock_monitor.wait_ready.return_value = True
+    mock_monitor.open_channel.return_value = True
+    mock_monitor.read_messages.return_value = fake_messages
+    mock_monitor.__enter__ = MagicMock(return_value=mock_monitor)
+    mock_monitor.__exit__ = MagicMock(return_value=False)
+
+    handled_ids = []
+
+    def fake_poll_once(monitor):
+        fresh = [m for m in fake_messages if not pipeline.state.seen(m.message_id)]
+        for m in fresh:
+            handled_ids.append(m.message_id)
+        return len(fresh)
+
+    with patch("src.pipeline.WhatsAppMonitor", return_value=mock_monitor), \
+         patch.object(pipeline, "_poll_once", side_effect=fake_poll_once):
+        handled = pipeline.run_once(no_ack_last=True)
+
+    assert handled == 1
+    assert handled_ids == ["msg-2"]  # the previously-handled message was reprocessed
+
+
 def test_run_once_auto_acks_by_default(tmp_path):
     """run_once auto-acks existing messages by default."""
     cfg = Config()
