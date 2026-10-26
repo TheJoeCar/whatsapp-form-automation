@@ -34,11 +34,19 @@ class LLMClient:
         self.max_retries = max_retries
         self.timeout = timeout
 
+    def _headers(self) -> dict[str, str]:
+        """OpenRouter requires these headers for free-tier access."""
+        h: dict[str, str] = {"Content-Type": "application/json"}
+        if self.api_key:
+            h["Authorization"] = f"Bearer {self.api_key}"
+        if "openrouter.ai" in self.base_url:
+            h["Referer"] = "https://openrouter.ai"
+            h["X-Title"] = "WhatsApp Form Automation"
+        return h
+
     def chat(self, messages: list[dict], max_tokens: int = 1500) -> str:
         """Send a chat completion, retrying transient failures with backoff."""
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers = self._headers()
         payload = {
             "model": self.model,
             "messages": messages,
@@ -56,7 +64,8 @@ class LLMClient:
                     continue
                 resp.raise_for_status()
                 data = resp.json()
-                content = data["choices"][0]["message"]["content"]
+                choice = data["choices"][0]["message"]
+                content = choice.get("content") or choice.get("reasoning")
                 if not content:
                     raise LLMError(f"Empty completion from {self.model}")
                 return content

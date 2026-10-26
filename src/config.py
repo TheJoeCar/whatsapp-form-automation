@@ -39,8 +39,7 @@ class WhatsAppConfig:
 
 @dataclass
 class FormsConfig:
-    identity_file: Path = PROJECT_ROOT / "requirements.yaml"
-    test_data: dict = field(default_factory=dict)
+    requirements_file: Path = PROJECT_ROOT / "requirements.md"
     use_llm_fallback: bool = True
 
 
@@ -95,8 +94,7 @@ def load_config(path: Path | None = None) -> Config:
 
     forms_raw = raw.get("forms") or {}
     forms = FormsConfig(
-        identity_file=_make_path(PROJECT_ROOT, forms_raw.get("identity_file", FormsConfig.identity_file)),
-        test_data=forms_raw.get("test_data") or {},
+        requirements_file=_make_path(PROJECT_ROOT, forms_raw.get("requirements_file", FormsConfig.requirements_file)),
         use_llm_fallback=bool(forms_raw.get("use_llm_fallback", FormsConfig.use_llm_fallback)),
     )
 

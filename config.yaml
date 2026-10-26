@@ -35,17 +35,11 @@ whatsapp:
     message_text: 'span.selectable-text'
 
 forms:
-  # Your requirements document: identity data + rules deciding which forms
-  # qualify to be filled. See requirements.yaml.
-  identity_file: requirements.yaml
-  # Legacy fallback used ONLY when the requirements file doesn't exist.
-  test_data:
-    name: "Testy McTestface"
-    email: "testy.mctestface@example.com"
-    phone: "+15550000001"
-    organization: "Automated Testing Co"
-  # Prefer LLM-generated values; if the LLM is unavailable, fall back to
-  # identity heuristics (still produces a valid payload).
+  # Requirements document (markdown) describing who you are,
+  # what forms you fill, and any constraints. The LLM reads
+  # this to decide if a form qualifies and what values to use.
+  requirements_file: requirements.md
+  # If the LLM is unavailable, fall back to deterministic heuristics.
   use_llm_fallback: true
 
 pipeline:

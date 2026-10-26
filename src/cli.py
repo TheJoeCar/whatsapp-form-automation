@@ -12,12 +12,16 @@ import sys
 from pathlib import Path
 
 from .config import PROJECT_ROOT, Config, load_config
-from .forms.filler import FillAborted, fill_form, value_source
+from .forms.filler import FillAborted, fill_form
 from .forms.parser import fetch_form_html, is_google_forms_url, parse_form_html
 from .forms.submitter import submit_form
-from .llm.client import LLMClient, list_free_models
-from .pipeline import Pipeline, resolve_identity
-from .requirements import evaluate_form
+from .llm.client import LLMClient, extract_json, list_free_models
+from .pipeline import Pipeline
+from .requirements import (
+    evaluate_form_prompt,
+    fill_form_prompt,
+    load_requirements,
+)
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMonitor, login_interactive
 
@@ -83,20 +87,15 @@ def cmd_parse_form(config: Config, args) -> None:
 
 def cmd_fill_form(config: Config, args) -> None:
     form = _fetch_parsed_form(args.url)
-    identity, rules, _reqs = resolve_identity(config)
-    if rules and not args.force:
-        reasons = evaluate_form(form, rules, identity)
-        if reasons:
-            for reason in reasons:
-                print(f"requirements: FAIL - {reason}")
-            print("form does not satisfy requirements.yaml (use --force to bypass)")
-            return
+    reqs_text = load_requirements(config.forms.requirements_file)
     try:
         values, warnings = fill_form(
-            form, llm=_build_llm(config), identity=identity, rules=rules.as_dict() if rules else {}
+            form,
+            llm=_build_llm(config),
+            requirements_text=reqs_text,
         )
     except FillAborted as exc:
-        print(f"filling aborted by rules: {exc}")
+        print(f"filling aborted: {exc}")
         return
     for warning in warnings:
         print(f"warning: {warning}")
@@ -106,20 +105,15 @@ def cmd_fill_form(config: Config, args) -> None:
 
 def cmd_submit_form(config: Config, args) -> None:
     form = _fetch_parsed_form(args.url)
-    identity, rules, _reqs = resolve_identity(config)
-    if rules and not args.force:
-        reasons = evaluate_form(form, rules, identity)
-        if reasons:
-            for reason in reasons:
-                print(f"requirements: FAIL - {reason}")
-            print("form does not satisfy requirements.yaml (use --force to bypass)")
-            return
+    reqs_text = load_requirements(config.forms.requirements_file)
     try:
         values, warnings = fill_form(
-            form, llm=_build_llm(config), identity=identity, rules=rules.as_dict() if rules else {}
+            form,
+            llm=_build_llm(config),
+            requirements_text=reqs_text,
         )
     except FillAborted as exc:
-        print(f"filling aborted by rules: {exc}")
+        print(f"filling aborted: {exc}")
         return
     for warning in warnings:
         print(f"warning: {warning}")
@@ -134,27 +128,55 @@ def cmd_submit_form(config: Config, args) -> None:
 
 
 def cmd_check_requirements(config: Config, args) -> None:
-    """Dry check: does this form satisfy requirements.yaml, and where would answers come from?"""
+    """Dry check: does this form match the requirements document?
+
+    Uses the LLM to evaluate the form against requirements.md.
+    Falls back to a simple field-summary if the LLM is unavailable.
+    """
     form = _fetch_parsed_form(args.url)
-    identity, rules, reqs = resolve_identity(config)
-    if reqs is None:
-        print(f"no requirements document at {config.forms.identity_file} - every form would be filled")
-        rules = None
+    reqs_text = load_requirements(config.forms.requirements_file)
 
-    if rules:
-        reasons = evaluate_form(form, rules, identity)
-        if reasons:
-            print("\nGATE: FAIL")
-            for reason in reasons:
-                print(f"  - {reason}")
-        else:
-            print("\nGATE: PASS (form satisfies every rule)")
-        print(f"fill_optional={rules.fill_optional}  never_guess={rules.never_guess}")
+    if reqs_text and _build_llm(config) is not None:
+        llm = _build_llm(config)
+        field_summaries = [
+            {
+                "entry_id": f.entry_id,
+                "type": f.type,
+                "required": f.required,
+                "title": f.title,
+                "options": f.options,
+            }
+            for f in form.fields
+        ]
+        prompt = evaluate_form_prompt(reqs_text, form.title or "(untitled)", field_summaries)
+        reply = llm.complete(
+            "Read the requirements document and decide if this form qualifies. "
+            "Reply with ONLY a JSON object: {\"qualifies\": true/false, \"reason\": \"...\"}",
+            prompt,
+            max_tokens=300,
+        )
+        try:
+            gate = extract_json(reply)
+            if gate.get("qualifies"):
+                print("\nGATE: PASS")
+            else:
+                print("\nGATE: FAIL")
+                print(f"  Reason: {gate.get('reason', 'unknown')}")
+        except Exception:
+            print("\nGATE: could not parse LLM response — showing form summary instead")
+    elif reqs_text:
+        print(f"\nRequirements document loaded ({config.forms.requirements_file})")
+        print("LLM unavailable — showing form summary for manual review:")
+    else:
+        print(f"\nNo requirements document at {config.forms.requirements_file}")
+        print("Every form would be filled (legacy mode)")
 
-    print("\nPer-field answer sources:")
+    print(f"\nForm: {form.title or '(untitled)'}")
+    print(f"Fields ({len(form.fields)}):")
     for field in form.fields:
         req = " [required]" if field.required else ""
-        print(f"  {field.entry_id}{req} {field.title!r} -> {value_source(field, identity)}")
+        opts = f" options={field.options}" if field.options else ""
+        print(f"  {field.entry_id}{req} type={field.type} title={field.title!r}{opts}")
 
 
 def cmd_login(config: Config, args) -> None:
@@ -216,6 +238,8 @@ def cmd_init(config: Config, args) -> None:
     print(f"dry_run: {config.pipeline.dry_run}")
     session = Path(config.whatsapp.session_dir)
     print(f"whatsapp session: {'exists' if session.exists() else 'not yet created (run login-whatsapp)'}")
+    reqs = Path(config.forms.requirements_file)
+    print(f"requirements doc: {'exists' if reqs.exists() else 'MISSING (every form will be filled)'}")
 
 
 # --------------------------------------------------------------------------- #
@@ -239,14 +263,12 @@ def main(argv=None) -> None:
 
     p = sub.add_parser("fill-form", help="parse a form and print the filled payload (no submit)")
     p.add_argument("url")
-    p.add_argument("--force", action="store_true", help="bypass the requirements gate")
 
     p = sub.add_parser("submit-form", help="parse, fill and submit a form")
     p.add_argument("url")
     p.add_argument("--yes", action="store_true", help="skip confirmation prompt")
-    p.add_argument("--force", action="store_true", help="bypass the requirements gate")
 
-    p = sub.add_parser("check-requirements", help="test a form URL against requirements.yaml")
+    p = sub.add_parser("check-requirements", help="test a form URL against requirements.md")
     p.add_argument("url")
 
     sub.add_parser("login-whatsapp", help="one-time headful QR login (session is saved)")

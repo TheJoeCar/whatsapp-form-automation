@@ -17,7 +17,7 @@ from .forms.parser import (
 )
 from .forms.submitter import submit_form
 from .llm.client import LLMClient
-from .requirements import Requirements, Rules, evaluate_form, load_requirements
+from .requirements import load_requirements, evaluate_form_prompt, fill_form_prompt
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMessage, WhatsAppMonitor
 
@@ -38,14 +38,18 @@ class Pipeline:
         self.config = config
         self.dry_run = config.pipeline.dry_run if dry_run is None else dry_run
         self.state = StateStore(config.pipeline.state_file)
-        self.identity, self.rules, self.requirements = resolve_identity(config)
-        if self.requirements is None:
-            log.warning(
-                "no requirements document at %s - every form will be filled (legacy test mode)",
-                config.forms.identity_file,
-            )
+        self.requirements_text = self._load_requirements(config)
         self.llm = self._build_llm()
         self._headless = headless
+
+    def _load_requirements(self, config: Config) -> str | None:
+        text = load_requirements(config.forms.requirements_file)
+        if text is None:
+            log.warning(
+                "no requirements document at %s — every form will be filled (legacy test mode)",
+                config.forms.requirements_file,
+            )
+        return text
 
     def _build_llm(self) -> LLMClient | None:
         cfg = self.config.llm
@@ -125,18 +129,43 @@ class Pipeline:
 
             log.info("parsed form %r with %d field(s)", form.title, len(form.fields))
 
-            # Requirements gate: only proceed when every rule passes.
-            if self.rules:
-                reasons = evaluate_form(form, self.rules, self.identity)
-                if reasons:
-                    log.info("skipping form %r: %s", form.title or url, "; ".join(reasons))
-                    return FormOutcome(url, "skipped", "; ".join(reasons))
+            # Requirements gate: ask the LLM if the form qualifies.
+            if self.requirements_text and self.llm is not None:
+                try:
+                    field_summaries = [
+                        {
+                            "entry_id": f.entry_id,
+                            "type": f.type,
+                            "required": f.required,
+                            "title": f.title,
+                            "options": f.options,
+                        }
+                        for f in form.fields
+                    ]
+                    gate_prompt = evaluate_form_prompt(
+                        self.requirements_text,
+                        form.title or "(untitled)",
+                        field_summaries,
+                    )
+                    gate_reply = self.llm.complete(
+                        "Read the requirements document and decide if this form qualifies. "
+                        "Reply with ONLY a JSON object: {\"qualifies\": true/false, \"reason\": \"...\"}",
+                        gate_prompt,
+                        max_tokens=300,
+                    )
+                    gate = extract_json(gate_reply)
+                    if not gate.get("qualifies"):
+                        reason = gate.get("reason", "does not match requirements")
+                        log.info("skipping form %r: %s", form.title or url, reason)
+                        return FormOutcome(url, "skipped", reason)
+                except Exception as exc:  # noqa: BLE001 - gate failure doesn't kill the pipeline
+                    log.warning("requirements gate failed, proceeding anyway: %s", exc)
 
+            # Fill the form using the LLM + requirements doc.
             values, warnings = fill_form(
                 form,
                 llm=self.llm,
-                identity=self.identity,
-                rules=self.rules.as_dict() if self.rules else {},
+                requirements_text=self.requirements_text,
                 use_llm=self.llm is not None,
             )
             for warning in warnings:
@@ -156,14 +185,6 @@ class Pipeline:
         except Exception as exc:  # noqa: BLE001 - keep the pipeline alive per-form
             log.exception("form processing failed for %s", url)
             return FormOutcome(url, "error", str(exc))
-
-
-def resolve_identity(config: Config) -> tuple[dict, Rules | None, Requirements | None]:
-    """(identity, rules, requirements) - requirements.yaml wins over legacy test_data."""
-    requirements = load_requirements(config.forms.identity_file)
-    if requirements is None:
-        return dict(config.forms.test_data), None, None
-    return requirements.identity.as_dict(), requirements.rules, requirements
 
 
 def _ensure_scheme(url: str) -> str:

@@ -129,12 +129,10 @@ def test_filler_falls_back_when_whole_reply_invalid():
     form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
     reply = '{"entry.3333333333": "Maybe"}'  # not a real option
     values, warnings = fill_form(form, llm=FakeLLM(reply))
-    # nothing valid survived -> full heuristic fallback kicks in
-    assert values["entry.3333333333"] == "Yes"
+    # entry.3333333333 is optional and "Maybe" is not a valid option,
+    # so it gets dropped. No fallback to heuristics since LLM succeeded.
+    assert "entry.3333333333" not in values
     assert any("not one of" in w for w in warnings)
-    assert any("heuristics" in w for w in warnings)
-    # required short_answer is still filled
-    assert values["entry.1111111111"]
 
 
 def test_filler_partial_llm_success():

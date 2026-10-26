@@ -16,7 +16,7 @@ to bypass CAPTCHAs, bulk-submit, or fill other people's forms.
 
 | Decision | Choice | Why |
 |---|---|---|
-| **Requirements document** | `requirements.yaml`: identity + rules, enforced by a gate before filling | You decide *which* forms qualify and *what* answers to give; ineligible forms are skipped with logged reasons |
+| **Requirements document** | `requirements.md`: natural-language markdown description | Flexible, LLM interprets it for form qualification and value generation |
 | LLM hosting | **OpenRouter free models now**, local Ollama later | No model download needed to start; swap later by changing `base_url`/`model` in config |
 | LLM client | Single **OpenAI-compatible** client | OpenRouter (`https://openrouter.ai/api/v1`) and Ollama (`http://localhost:11434/v1`) speak the same protocol → drop-in swap |
 | Form submission | **HTTP POST to the form's `formResponse` endpoint**, not browser automation | Google Forms can be submitted programmatically with `entry.NN` params; far more reliable than clicking through a browser |
@@ -104,8 +104,8 @@ whatsapp-form-automation/
       → *calibrate parser against one of your real forms with `parse-form <url>`*
 - [x] **M2 — WhatsApp monitor**: login script (QR once), channel search, message polling, debug command
 - [x] **M3 — Pipeline + CLI**: `run --once` end-to-end in dry-run, then real submit
-- [x] **M3.5 — Requirements document**: `requirements.yaml` gate (rules) + identity-driven filling,
-      `check-requirements` command, `never_guess` abort instead of placeholders
+- [x] **M3.5 — Requirements document**: `requirements.md` (natural-language markdown) + LLM-driven
+      form qualification and value generation, `check-requirements` command, `never_guess` abort instead of placeholders
 - [ ] **M4 — Hardening**: run against real channel for a few days; retry/backoff tuning;
       switch LLM to Ollama on the home lab when ready
 

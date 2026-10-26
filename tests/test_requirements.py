@@ -1,167 +1,159 @@
-"""Tests for the requirements document: gate rules and strict filling."""
+"""Tests for the markdown-based requirements document and LLM-driven filling."""
 
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.forms.filler import FillAborted, fill_form, is_answerable, value_source  # noqa: E402
-from src.forms.parser import FormField, GoogleForm  # noqa: E402
-from src.requirements import Rules, evaluate_form, load_requirements  # noqa: E402
+from src.forms.filler import fill_form, FillAborted  # noqa: E402
+from src.forms.parser import FormField, GoogleForm, parse_form_html  # noqa: E402
+from src.llm.client import extract_json  # noqa: E402
+from src.requirements import (
+    load_requirements,
+    evaluate_form_prompt,
+    fill_form_prompt,
+    requirements_prompt,
+)  # noqa: E402
+
+FORM_URL = "https://docs.google.com/forms/d/e/FAKEID123456/viewform"
+
+SYNTHETIC_HTML = """
+<html><head><title>Test Form - Google Forms</title>
+<meta property="og:title" content="Test Form"></head><body>
+<form>
+<input name="fbzx" value="fbzx-token-123"/>
+<div role="listitem"><div role="heading">What is your name?</div>
+  <input type="text" name="entry.1111111111" required/></div>
+<div role="listitem"><div role="heading">Your email?</div>
+  <input type="text" name="entry.2222222222"/></div>
+<div role="listitem"><div role="heading">Pick one</div>
+  <input type="radio" name="entry.3333333333" id="r1" value="Yes"/><label for="r1">Yes</label>
+  <input type="radio" name="entry.3333333333" id="r2" value="No"/><label for="r2">No</label></div>
+<div role="listitem"><div role="heading">Choose fruit</div>
+  <select name="entry.4444444444">
+    <option value="">Choose</option>
+    <option value="Apple">Apple</option>
+    <option value="Banana">Banana</option>
+  </select></div>
+<div role="listitem"><div role="heading">Comments?</div>
+  <textarea name="entry.5555555555"></textarea></div>
+</form>
+<script>var FB_PUBLIC_LOAD_DATA_ = [null,null,[]];</script>
+</body></html>
+"""
+
+MODERN_HTML = """
+<html><head><title>Modern Form</title></head><body>
+<div data-params="%.@.[11111111,&quot;What is your name?&quot;,null,0,[[2222222222,null,true,null,null,null,0]],null,null,null,null,null,null,[null,&quot;What is your name?&quot;]]"></div>
+<div data-params="%.@.[33333333,&quot;Pick one&quot;,null,2,[[4444444444,[[&quot;Yes&quot;,null,null,null,0],[&quot;No&quot;,null,null,null,0]],1,null,null,null,null,null,0]],null,null,null,null,null,null,[null,&quot;Pick one&quot;]]"></div>
+<input type="hidden" name="entry.2222222222_sentinel"/>
+<input type="hidden" name="entry.4444444444_sentinel"/>
+</body></html>
+"""
+
+SAMPLE_REQUIREMENTS = """
+## Who I Am (Test Persona)
+
+- **Name:** Joe Bobby
+- **Email:** joe.bobby@example.com
+
+## What Kinds of Forms I Fill
+
+I mainly fill out climbing trip forms. These typically ask about
+personal info, climbing experience, and waivers.
+
+## Rules
+
+- Only fill forms I would realistically sign up for.
+- Answer required questions first.
+- Never write placeholder text into required fields.
+"""
 
 
-def make_form(title="Signup Form", fields=None):
-    if fields is None:
-        fields = [
-            FormField(entry_id="entry.1", title="Your name?", type="short_answer", required=True),
-            FormField(entry_id="entry.2", title="Your email?", type="short_answer", required=True),
-            FormField(
-                entry_id="entry.3",
-                title="Preferred time",
-                type="multiple_choice",
-                options=["Morning", "Afternoon"],
-            ),
-        ]
-    return GoogleForm(
-        title=title,
-        url="https://docs.google.com/forms/d/e/FAKEID123456/viewform",
-        submit_url="https://docs.google.com/forms/d/e/FAKEID123456/formResponse",
-        fields=fields,
-    )
+def test_parse_synthetic_form():
+    form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
+    assert form.title == "Test Form"
+    by_entry = {f.entry_id: f for f in form.fields}
+    assert set(by_entry) == {
+        "entry.1111111111", "entry.2222222222", "entry.3333333333",
+        "entry.4444444444", "entry.5555555555",
+    }
+    assert by_entry["entry.1111111111"].required is True
+    assert by_entry["entry.3333333333"].type == "multiple_choice"
+    assert by_entry["entry.4444444444"].type == "dropdown"
 
 
-IDENTITY = {
-    "name": "Joe Sample",
-    "email": "joe.sample@example.com",
-    "phone": "+15551234567",
-    "organization": "Sample Co",
-    "extras": [{"match": ["age", "how old"], "value": "34"}],
-}
+def test_parse_modern_data_params_form():
+    form = parse_form_html(MODERN_HTML, url=FORM_URL)
+    by_entry = {f.entry_id: f for f in form.fields}
+    assert set(by_entry) == {"entry.2222222222", "entry.4444444444"}
+    assert by_entry["entry.2222222222"].required is True
+    assert by_entry["entry.4444444444"].type == "multiple_choice"
 
 
-def test_passes_when_everything_matches():
-    reasons = evaluate_form(make_form(), Rules(), IDENTITY)
-    assert reasons == []
+def test_extract_json_with_prose():
+    assert extract_json('Sure! Here you go:\n{"entry.1": "ok"}\nHope that helps') == {"entry.1": "ok"}
 
 
-def test_title_must_include():
-    rules = Rules(title_must_include=["survey", "poll"])
-    reasons = evaluate_form(make_form(title="Registration Form"), rules, IDENTITY)
-    assert any("does not include" in r for r in reasons)
-    assert evaluate_form(make_form(title="Survey about coffee"), rules, IDENTITY) == []
+def test_requirements_prompt():
+    prompt = requirements_prompt(SAMPLE_REQUIREMENTS)
+    assert "=== FORM REQUIREMENTS" in prompt
+    assert " climbing trip" in prompt.lower()
+    assert "=== END REQUIREMENTS ===" in prompt
 
 
-def test_title_must_not_include():
-    rules = Rules(title_must_not_include=["giveaway"])
-    reasons = evaluate_form(make_form(title="Giveaway entry"), rules, IDENTITY)
-    assert any("excluded keyword" in r for r in reasons)
-
-
-def test_field_bounds():
-    assert any("minimum" in r for r in evaluate_form(make_form(), Rules(min_fields=10), IDENTITY))
-    assert any("exceed" in r for r in evaluate_form(make_form(), Rules(max_fields=2), IDENTITY))
-
-
-def test_disallowed_types():
-    rules = Rules(disallowed_types=["checkboxes"])
-    assert evaluate_form(make_form(), rules, IDENTITY) == []
-    fields = [FormField(entry_id="entry.9", title="Pick many", type="checkboxes", options=["a"])]
-    reasons = evaluate_form(make_form(fields=fields), rules, IDENTITY)
-    assert any("checkboxes" in r for r in reasons)
-
-
-def test_disallowed_keywords_in_questions():
-    rules = Rules(disallowed_keywords=["password"])
-    fields = [FormField(entry_id="entry.9", title="Choose a password", type="short_answer", required=True)]
-    reasons = evaluate_form(make_form(fields=fields), rules, IDENTITY)
-    assert any("password" in r for r in reasons)
-
-
-def test_required_all_answerable():
-    fields = [
-        FormField(entry_id="entry.1", title="Your name?", type="short_answer", required=True),
-        FormField(entry_id="entry.2", title="Favourite colour?", type="short_answer", required=True),
+def test_evaluate_form_prompt():
+    form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
+    field_summaries = [
+        {"entry_id": f.entry_id, "type": f.type, "required": f.required, "title": f.title, "options": f.options}
+        for f in form.fields
     ]
-    form = make_form(fields=fields)
-    rules = Rules()
-    reasons = evaluate_form(form, rules, IDENTITY)
-    assert any("not answerable" in r and "entry.2" in r for r in reasons)
-    # With an extra covering the colour question, it passes.
-    identity = dict(IDENTITY, extras=IDENTITY["extras"] + [{"match": ["colour", "color"], "value": "blue"}])
-    assert evaluate_form(form, rules, identity) == []
+    prompt = evaluate_form_prompt(SAMPLE_REQUIREMENTS, form.title or "", field_summaries)
+    assert "climbing trip" in prompt.lower()
+    assert "entry.1111111111" in prompt
 
 
-def test_answerable_and_value_source():
-    email_field = FormField(entry_id="entry.1", title="Your email?", type="short_answer", required=True)
-    age_field = FormField(entry_id="entry.2", title="How old are you?", type="short_answer", required=True)
-    unknown = FormField(entry_id="entry.3", title="Favourite colour?", type="short_answer", required=True)
-    assert is_answerable(email_field, IDENTITY)
-    assert is_answerable(age_field, IDENTITY)
-    assert not is_answerable(unknown, IDENTITY)
-    assert "joe.sample@example.com" in value_source(email_field, IDENTITY)
-    assert "34" in value_source(age_field, IDENTITY)
-    assert "UNKNOWN" in value_source(unknown, IDENTITY)
+def test_fill_form_prompt():
+    form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
+    field_summaries = [
+        {"entry_id": f.entry_id, "type": f.type, "required": f.required, "title": f.title, "options": f.options}
+        for f in form.fields
+    ]
+    prompt = fill_form_prompt(SAMPLE_REQUIREMENTS, form.title or "", field_summaries)
+    assert "climbing trip" in prompt.lower()
+    assert "entry.1111111111" in prompt
 
 
-def test_extras_matching():
-    age_field = FormField(entry_id="entry.1", title="How old are you?", type="short_answer")
-    values, _warnings = fill_form(make_form(fields=[age_field]), llm=None, identity=IDENTITY)
-    assert values["entry.1"] == "34"
+def test_filler_heuristic_fallback_without_llm():
+    form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
+    values, _warnings = fill_form(form, llm=None)
+    by_entry = {f.entry_id: f for f in form.fields}
+    assert "email" in values["entry.2222222222"] or values["entry.2222222222"]
+    assert values["entry.3333333333"] == "Yes"  # first option
+    assert values["entry.4444444444"] == "Apple"
+    assert by_entry["entry.1111111111"].required and values["entry.1111111111"]
 
 
-def test_strict_mode_skips_optional():
-    form = make_form()
-    values, warnings = fill_form(form, llm=None, identity=IDENTITY, rules={"fill_optional": False})
-    assert values["entry.1"] == "Joe Sample"
-    assert values["entry.2"] == "joe.sample@example.com"
-    assert "entry.3" not in values  # optional choice skipped
-    assert any("optional field" in w for w in warnings)
-
-
-def test_never_guess_aborts_instead_of_placeholder():
-    fields = [FormField(entry_id="entry.1", title="Favourite colour?", type="short_answer", required=True)]
-    form = make_form(fields=fields)
-    with pytest.raises(FillAborted) as excinfo:
-        fill_form(form, llm=None, identity=IDENTITY, rules={"never_guess": True})
-    assert "entry.1" in str(excinfo.value)
-
-
-def test_strict_mode_uses_choice_options():
-    # Choice fields are answerable from their own options even in strict mode.
-    form = make_form()
-    values, _warnings = fill_form(form, llm=None, identity=IDENTITY, rules={"fill_optional": True})
-    assert values["entry.3"] == "Morning"
-
-
-def test_load_requirements_file(tmp_path):
-    doc = tmp_path / "requirements.yaml"
-    doc.write_text(
-        """
-identity:
-  name: "Jane Doe"
-  email: "jane@example.com"
-  extras:
-    - match: ["team"]
-      value: "Red team"
-rules:
-  max_fields: 5
-  disallowed_types: ["checkboxes"]
-  fill_optional: true
-  never_guess: false
-""",
-        encoding="utf-8",
-    )
-    reqs = load_requirements(doc)
-    assert reqs is not None
-    identity, rules = reqs.as_fill_args()
-    assert identity["name"] == "Jane Doe"
-    assert identity["extras"][0]["value"] == "Red team"
-    assert rules["max_fields"] == 5
-    assert rules["fill_optional"] is True
-    assert rules["never_guess"] is False
+def test_filler_falls_back_when_whole_reply_invalid():
+    class FakeLLM:
+        def complete(self, system, user, max_tokens=1500):
+            return '{"entry.3333333333": "Maybe"}'
+    form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
+    values, warnings = fill_form(form, llm=FakeLLM())
+    # entry.3333333333 is optional and "Maybe" is not a valid option,
+    # so it gets dropped. No fallback to heuristics since LLM succeeded.
+    assert "entry.3333333333" not in values
+    assert any("not one of" in w for w in warnings)
 
 
 def test_load_requirements_missing(tmp_path):
-    assert load_requirements(tmp_path / "nope.yaml") is None
+    assert load_requirements(tmp_path / "nope.md") is None
+
+
+def test_load_requirements_file(tmp_path):
+    doc = tmp_path / "requirements.md"
+    doc.write_text(SAMPLE_REQUIREMENTS, encoding="utf-8")
+    text = load_requirements(doc)
+    assert text is not None
+    assert "climbing trip" in text.lower()
+    assert "Joe Bobby" in text

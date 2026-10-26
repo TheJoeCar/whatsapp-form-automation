@@ -27,38 +27,42 @@ Two files control behavior:
 
 **`config.yaml`** — plumbing (model, channel, selectors, dry-run default).
 
-**`requirements.yaml`** — *your requirements document*: which forms qualify, and
-what answers to give. The pipeline only fills forms that pass every rule.
+**`requirements.md`** — *your requirements document*: a natural-language
+description of who you are, what forms you fill, and any constraints.
+The LLM reads this to decide if a form qualifies and what values to use.
 
-```yaml
-identity:            # answers for questions about you
-  name: "Your Name"
-  email: "you@example.com"
-  phone: "+15551234567"
-  extras:            # keyword-matched facts beyond name/email/phone
-    - match: ["age", "how old"]
-      value: "34"
+The requirements document is flexible — write it in plain English.
+The LLM interprets it to:
+- Decide if a form matches what you'd fill out
+- Generate appropriate test values for each field
+- Respect constraints (e.g. "never write placeholder text")
 
-rules:               # gates - a form that fails any of these is skipped (and logged why)
-  title_must_include: []        # form title must contain one of these (empty = any)
-  title_must_not_include: []    # form title must contain none of these
-  min_fields: 1
-  max_fields: 30
-  disallowed_types: []          # skip forms containing these question types
-  disallowed_keywords: []       # skip forms where any question mentions these
-  required_all_answerable: true # every required field must be answerable from identity/options
-  fill_optional: false          # answer required questions only
-  never_guess: true             # abort instead of writing placeholder answers
+Example `requirements.md`:
+```markdown
+## Who I Am (Test Persona)
+- **Name:** Joe Bobby
+- **Email:** joe.bobby@example.com
+- **Phone:** +15551234567
+
+## What Kinds of Forms I Fill
+I mainly fill out climbing trip forms. These typically ask about
+personal info, climbing experience, and waivers.
+
+## Rules
+- Only fill forms I would realistically sign up for.
+- Answer required questions first.
+- Never write placeholder text into required fields.
+- For multiple-choice fields, always pick a real option.
 ```
 
-If `requirements.yaml` is missing the pipeline falls back to legacy test mode
-(`forms.test_data` in config.yaml, everything filled) with a logged warning.
+If `requirements.md` is missing the pipeline falls back to legacy test mode
+(deterministic heuristics, every form filled) with a logged warning.
 
 | config.yaml | What | Default |
 |---|---|---|
 | `llm` | provider, model, endpoint | OpenRouter, `openrouter/free` (auto-picks a free model) |
 | `whatsapp` | channel name, poll interval, session dir, selectors | 60s polling, headless |
-| `forms.identity_file` | path to the requirements document | `requirements.yaml` |
+| `forms.requirements_file` | path to the requirements document | `requirements.md` |
 | `pipeline` | state file, log file, **`dry_run`** | **dry run ON** |
 
 ## Usage
@@ -71,10 +75,10 @@ wa check-llm            # tiny prompt to verify the model works
 wa list-free-models     # see which free models exist right now
 
 # Requirements + forms (no WhatsApp involved)
-wa check-requirements <url>  # does the form satisfy requirements.yaml? where would answers come from?
+wa check-requirements <url>  # does the form match requirements.md?
 wa parse-form <url>          # show how the parser reads your form - calibrate here
-wa fill-form <url>           # print the payload that would be submitted (no submit; --force bypasses the gate)
-wa submit-form <url>         # parse + fill + submit (asks for confirmation; --force bypasses the gate)
+wa fill-form <url>           # print the payload that would be submitted (no submit)
+wa submit-form <url>         # parse + fill + submit (asks for confirmation)
 
 # WhatsApp
 wa login-whatsapp       # ONE TIME: headful browser opens, scan the QR
