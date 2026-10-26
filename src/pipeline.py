@@ -7,7 +7,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from .config import Config
+from .config import Config, WhatsAppConfig
 from .forms.filler import fill_form
 from .forms.parser import (
     canonical_urls,
