@@ -48,7 +48,7 @@ class FormsConfig:
 class PipelineConfig:
     state_file: Path = PROJECT_ROOT / "state" / "processed.json"
     log_file: Path = PROJECT_ROOT / "logs" / "pipeline.log"
-    dry_run: bool = True
+    dry_run: bool = False
 
 
 @dataclass

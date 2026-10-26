@@ -1,6 +1,6 @@
-"""Command-line entry point.
+"""Monitor a WhatsApp channel for Google Forms links, fill them with test data, and submit.
 
-    python -m src.cli --help
+Dry-run is off by default — forms are submitted for real. Use --dry-run to preview without submitting.
 """
 
 from __future__ import annotations
@@ -81,6 +81,8 @@ def cmd_run(config: Config, args) -> None:
         channel=args.channel,
         poll_interval=args.poll_interval,
     )
+    mode = "DRY-RUN" if pipeline.dry_run else "LIVE"
+    log.info("=== %s mode ===", mode)
     if args.loop:
         pipeline.run_forever(
             no_ack=args.no_ack,
@@ -91,7 +93,8 @@ def cmd_run(config: Config, args) -> None:
             no_ack=args.no_ack,
             no_ack_last=args.no_ack_last,
         )
-        print(f"done - {handled} new message(s) handled (see {config.pipeline.log_file})")
+        print(f"done - {handled} new message(s) handled "
+              f"(mode: {mode}, log: {config.pipeline.log_file})")
 
 
 def cmd_parse_form(config: Config, args) -> None:
@@ -108,7 +111,7 @@ def cmd_fill_form(config: Config, args) -> None:
     )
     for warning in warnings:
         print(f"warning: {warning}")
-    print("\nPayload (would be POSTed to formResponse):")
+    print(f"\nFilled values (what would be submitted to the form):")
     print(json.dumps(values, indent=2, ensure_ascii=False))
 
 
@@ -124,12 +127,12 @@ def cmd_submit_form(config: Config, args) -> None:
         print(f"warning: {warning}")
     print(f"\nSubmitting {len(values)} field(s) to {form.submit_url}")
     if not args.yes:
-        answer = input("Continue? [y/N] ")
+        answer = input("Submit this form now? [y/N] ")
         if answer.strip().lower() != "y":
-            print("aborted")
+            print("Submission cancelled. No data was sent.")
             return
     result = submit_form(form, values)
-    print(("OK: " if result.ok else "FAILED: ") + result.detail)
+    print(("✓ Submitted: " if result.ok else "✗ Failed: ") + result.detail)
 
 
 def cmd_check_requirements(config: Config, args) -> None:
@@ -191,7 +194,7 @@ def cmd_login(config: Config, args) -> None:
 
 def cmd_list_channels(config: Config, args) -> None:
     """List all WhatsApp chats/channels with their names."""
-    headless = not args.headed if hasattr(args, 'headed') else config.whatsapp.headless
+    headless = _resolve_headed(config, args)
     monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
     monitor.start()
     try:
@@ -210,17 +213,26 @@ def cmd_list_channels(config: Config, args) -> None:
         monitor.stop()
 
 
+def _resolve_headed(config: Config, args) -> bool:
+    """Resolve headless flag from args, falling back to config default."""
+    if hasattr(args, 'headed') and args.headed:
+        return False
+    if hasattr(args, 'headless') and args.headless:
+        return True
+    return config.whatsapp.headless
+
+
 def cmd_debug_whatsapp(config: Config, args) -> None:
     """Open WhatsApp Web and dump selector diagnostics."""
-    headless = not args.headed if hasattr(args, 'headed') else config.whatsapp.headless
+    headless = _resolve_headed(config, args)
     monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
     monitor.start()
     try:
         ready = monitor.wait_ready(quiet=False)
-        print(f"\nready: {ready}")
+        print(f"\nWhatsApp ready: {ready}")
         if ready:
             print(monitor.diagnostics())
-            if input("\nopen the configured channel and dump message candidates? [Y/n] ").lower().startswith("y"):
+            if input("\nOpen the configured channel and dump message candidates? [y/N] ").lower().startswith("y"):
                 if monitor.open_channel(config.whatsapp.channel):
                     print(monitor.diagnostics())
                     for msg in monitor.read_messages(limit=5):
@@ -253,7 +265,7 @@ def cmd_state(config: Config, args) -> None:
         store.path.unlink(missing_ok=True)
         print("state cleared")
     if args.ack:
-        headless = not args.headed if hasattr(args, 'headed') else config.whatsapp.headless
+        headless = _resolve_headed(config, args)
         monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
         monitor.start()
         try:
@@ -261,7 +273,8 @@ def cmd_state(config: Config, args) -> None:
                 print("WhatsApp Web not ready — are you logged in?")
                 return
             if not monitor.open_channel(config.whatsapp.channel):
-                print(f"could not open channel {config.whatsapp.channel!r}")
+                print(f"Could not open channel {config.whatsapp.channel!r}. "
+                      f"Run 'wa list-channels' to see available channels.")
                 return
             messages = monitor.read_messages()
             newly = 0
@@ -311,14 +324,32 @@ def cmd_init(config: Config, args) -> None:
     if not env_path.exists():
         print(f"copy .env.example to {env_path} and add your OpenRouter key")
     key = config.llm.resolve_api_key()
-    print(f"api key: {'present' if key else 'MISSING'}")
-    print(f"llm: {config.llm.provider} / {config.llm.model} @ {config.llm.base_url}")
+    print(f"api key: {'✓ present' if key else '✗ not found — add it to .env'}")
+    print(f"LLM: {config.llm.model} (via {config.llm.provider})")
     print(f"channel: {config.whatsapp.channel!r}")
-    print(f"dry_run: {config.pipeline.dry_run}")
+    print(f"submission mode: {'DRY RUN (no forms will be submitted)' if config.pipeline.dry_run else 'LIVE (forms will be submitted)'}")
     session = Path(config.whatsapp.session_dir)
-    print(f"whatsapp session: {'exists' if session.exists() else 'not yet created (run login-whatsapp)'}")
+    print(f"whatsapp session: {'✓ exists' if session.exists() else '✗ not yet created (run wa login-whatsapp)'}")
     reqs = Path(config.forms.requirements_file)
-    print(f"requirements doc: {'exists' if reqs.exists() else 'MISSING (every form will be filled)'}")
+    print(f"requirements doc: {'✓ exists' if reqs.exists() else '✗ not found — all forms will be filled without filtering'}")
+
+    # Next steps
+    issues = []
+    if not key:
+        issues.append("add your OpenRouter API key to .env")
+    if config.whatsapp.channel == "My Channel":
+        issues.append("set 'whatsapp.channel' in config.yaml to your WhatsApp channel name")
+    if not session.exists():
+        issues.append("run 'wa login-whatsapp' to set up WhatsApp Web session")
+    if not reqs.exists():
+        issues.append("create a requirements.md file (copy from requirements.md.example)")
+
+    if issues:
+        print("\nNext steps:")
+        for i, issue in enumerate(issues, 1):
+            print(f"  {i}. {issue}")
+    else:
+        print("\nAll checks passed! Run 'wa run' to start processing forms.")
 
 
 # --------------------------------------------------------------------------- #
@@ -331,9 +362,9 @@ def main(argv=None) -> None:
     p = sub.add_parser("run", help="poll WhatsApp and process new form links")
     p.add_argument("--loop", action="store_true", help="keep polling until Ctrl+C")
     p.add_argument("--dry-run", dest="dry_run", action="store_true", default=None,
-                   help="force dry run (override config)")
+                   help="preview only: print what would be submitted without actually sending")
     p.add_argument("--submit", dest="dry_run", action="store_false",
-                   help="force real submissions (override config)")
+                   help="submit forms for real (this is the default)")
     p.add_argument("--headed", action="store_true", help="run WhatsApp browser headful (debugging)")
     p.add_argument("--no-ack", action="store_true",
                    help="process existing messages too (don't auto-acknowledge)")
@@ -351,7 +382,7 @@ def main(argv=None) -> None:
     p = sub.add_parser("fill-form", help="parse a form and print the filled payload (no submit)")
     p.add_argument("url")
 
-    p = sub.add_parser("submit-form", help="parse, fill and submit a form")
+    p = sub.add_parser("submit-form", help="parse, fill, and submit a form (asks for confirmation)")
     p.add_argument("url")
     p.add_argument("--yes", action="store_true", help="skip confirmation prompt")
 

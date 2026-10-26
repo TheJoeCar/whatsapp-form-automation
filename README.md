@@ -2,7 +2,7 @@
 
 A lightweight automation tool that monitors a WhatsApp channel for Google Forms
 links, fills the form with test data, and submits it. Built for testing your
-own forms — dry-run is on by default.
+own forms — submissions are live by default. Use `--dry-run` to preview without submitting.
 
 ## Setup
 
@@ -37,7 +37,7 @@ entry point declared in `pyproject.toml`.
 
 Two files control behavior:
 
-**`config.yaml`** — plumbing (model, channel, selectors, dry-run default).
+**`config.yaml`** — plumbing (model, channel, selectors, submission mode).
 
 **`requirements.md`** — a natural-language description of who you are and what
 forms you fill. The automation reads this to decide if a form qualifies and
@@ -69,7 +69,7 @@ heuristics (every form is filled) with a logged warning.
 | `whatsapp.channel` | WhatsApp channel name to monitor | *(set in config)* |
 | `whatsapp.poll_interval_seconds` | Seconds between polls | `60` |
 | `forms.requirements_file` | Path to requirements document | `requirements.md` |
-| `pipeline.dry_run` | If `true`, no submissions are made | `true` |
+| `pipeline.dry_run` | If `true`, no submissions are made (preview only) | `false` |
 
 ## Usage
 
@@ -91,9 +91,9 @@ wa debug-whatsapp            # selector diagnostics if extraction breaks
 wa list-channels             # list all chats/channels with their names
 
 # The pipeline
-wa run                       # one poll cycle (auto-acks existing messages by default)
+wa run                       # one poll cycle, submit forms for real
+wa run --dry-run            # preview only, no submissions
 wa run --loop                # keep polling until Ctrl+C
-wa run --submit              # actually submit (only after dry-run looks right)
 wa run --no-ack              # process existing messages too (don't auto-ack)
 wa run --no-ack-last         # ack all messages except the most recent
 wa run --channel "My Channel"  # override the configured channel

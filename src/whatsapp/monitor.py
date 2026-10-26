@@ -132,7 +132,7 @@ class WhatsAppMonitor:
                 return True
             if not qr_announced and self.has_qr() and not quiet:
                 print(f"[whatsapp] QR code detected - scan it in the opened browser "
-                      f"(or run `python -m src.cli login-whatsapp` headful first). "
+                      f"(or run 'wa login-whatsapp' headful first). "
                       f"Waiting up to {timeout_s}s...")
                 qr_announced = True
             now = time.time()

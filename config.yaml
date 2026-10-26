@@ -47,5 +47,6 @@ forms:
 pipeline:
   state_file: state/processed.json
   log_file: logs/pipeline.log
-  # Safety: dry-run prints what it *would* do. Set false only after testing.
-  dry_run: true
+  # Safety: dry-run prints what it *would* do without submitting.
+  # Set to true if you want to test without actually submitting forms.
+  dry_run: false
