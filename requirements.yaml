@@ -6,10 +6,10 @@
 identity:
   # Used when a question asks about you. Keys are matched by keyword against
   # the question title (e.g. "email" in "What is your email address?").
-  name: "Your Name"
-  email: "you@example.com"
+  name: "Joe Bobby"
+  email: "Joe@Bobby.com"
   phone: "+15551234567"
-  organization: "Your Organization"
+  organization: "Bobby inc"
 
   # Extra facts the standard keywords don't cover. `match` entries are
   # case-insensitive substrings of the question title; first match wins.

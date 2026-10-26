@@ -115,7 +115,7 @@ whatsapp-form-automation/
 |---|---|
 | WhatsApp Web DOM changes break extraction | Role-based selectors first, class-based fallbacks, selectors in config, `debug-whatsapp` dumps candidates |
 | Form parser misreads field types | `parse-form` prints everything it found; filler validates option membership before submitting |
-| Free OpenRouter models rate-limited / down | Retries with backoff; `list-free-models` command to switch; deterministic filler fallback works without LLM |
+| Free OpenRouter models refuse PII-heavy prompts | Identity heuristics fallback produces correct payloads even when LLM is blocked; `never_guess` means no placeholders are ever invented |
 | Duplicate submissions from re-polled messages | `state/processed.json` keyed on message id |
 | Accidental real submissions | dry-run default everywhere; `submit-form` asks for confirmation |
 | WhatsApp account flags automation | Human-pace polling (default 60s), only reading one channel, no bulk messaging actions |
