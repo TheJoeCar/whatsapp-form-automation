@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from .config import PROJECT_ROOT, Config, load_config
-from .forms.filler import FillAborted, fill_form
+from .forms.filler import fill_form
 from .forms.parser import fetch_form_html, is_google_forms_url, parse_form_html
 from .forms.submitter import submit_form
 from .llm.client import LLMClient, extract_json, list_free_models
@@ -88,15 +88,11 @@ def cmd_parse_form(config: Config, args) -> None:
 def cmd_fill_form(config: Config, args) -> None:
     form = _fetch_parsed_form(args.url)
     reqs_text = load_requirements(config.forms.requirements_file)
-    try:
-        values, warnings = fill_form(
-            form,
-            llm=_build_llm(config),
-            requirements_text=reqs_text,
-        )
-    except FillAborted as exc:
-        print(f"filling aborted: {exc}")
-        return
+    values, warnings = fill_form(
+        form,
+        llm=_build_llm(config),
+        requirements_text=reqs_text,
+    )
     for warning in warnings:
         print(f"warning: {warning}")
     print("\nPayload (would be POSTed to formResponse):")
@@ -106,15 +102,11 @@ def cmd_fill_form(config: Config, args) -> None:
 def cmd_submit_form(config: Config, args) -> None:
     form = _fetch_parsed_form(args.url)
     reqs_text = load_requirements(config.forms.requirements_file)
-    try:
-        values, warnings = fill_form(
-            form,
-            llm=_build_llm(config),
-            requirements_text=reqs_text,
-        )
-    except FillAborted as exc:
-        print(f"filling aborted: {exc}")
-        return
+    values, warnings = fill_form(
+        form,
+        llm=_build_llm(config),
+        requirements_text=reqs_text,
+    )
     for warning in warnings:
         print(f"warning: {warning}")
     print(f"\nSubmitting {len(values)} field(s) to {form.submit_url}")

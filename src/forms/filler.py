@@ -1,25 +1,20 @@
 """Generate values for a parsed form using the LLM + requirements document.
 
 The LLM reads the requirements.md document and the parsed form fields,
-then generates appropriate test values. Every value is validated
-against the parsed field types and option lists before it is returned.
+then generates appropriate test values. If the LLM is unavailable or
+refuses, the filler returns an empty dict (no values generated) and
+the pipeline skips the form.
 
-If the LLM is unavailable, a deterministic heuristic fallback produces
-a valid payload.
+No fallback values are ever generated — if the LLM can't fill the form,
+nothing is submitted.
 """
 
 from __future__ import annotations
-
-import re
 
 from ..llm.client import LLMClient, extract_json
 from .parser import FormField, GoogleForm
 
 _CHOICE_TYPES = {"multiple_choice", "dropdown", "linear_scale"}
-
-
-class FillAborted(Exception):
-    """Raised when the LLM refuses to fill or no values can be generated."""
 
 
 def fill_form(
@@ -45,18 +40,9 @@ def fill_form(
         except Exception as exc:  # noqa: BLE001 - any LLM failure must not kill the pipeline
             warnings.append(f"LLM filling failed, using heuristics: {exc}")
 
-    # Fallback: deterministic heuristics.
-    values = {f.entry_id: _heuristic_value(f) for f in form.fields if _heuristic_value(f)}
-    warnings.append("values from deterministic heuristics (LLM unavailable or failed)")
-
-    # Guarantee required fields have something.
-    for field in form.fields:
-        if field.required and field.entry_id not in values:
-            fallback = _heuristic_value(field)
-            if fallback:
-                values[field.entry_id] = fallback
-                warnings.append(f"required field {field.entry_id} filled from heuristics")
-
+    # No fallback values — if the LLM fails, abort rather than submit fake data.
+    values: dict[str, str | list[str]] = {}
+    warnings.append("LLM unavailable — no values generated, form will not be submitted")
     return values, warnings
 
 
@@ -152,37 +138,4 @@ def _match_option(field: FormField, value, warnings: list[str], fail_quietly: bo
     if fail_quietly:
         return None
     warnings.append(f"dropped {field.entry_id}: {value!r} is not one of {field.options!r}")
-    return None
-
-
-def _heuristic_value(field: FormField) -> str | list[str] | None:
-    """Deterministic fallback when the LLM is unavailable."""
-    title = field.title.lower()
-    ftype = "short_answer" if field.type.startswith("unknown_type_") else field.type
-
-    if ftype in _CHOICE_TYPES and field.options:
-        return field.options[0]
-    if ftype == "checkboxes" and field.options:
-        return [field.options[0]]
-
-    if field.input_type == "email" or "email" in title:
-        return "testy.mctestface@example.com"
-    if field.input_type == "tel" or "phone" in title or "mobile" in title:
-        return "+15550000001"
-    if field.input_type == "number":
-        return "1"
-    if field.input_type == "date" or "date" in title:
-        return "2026-01-01"
-    if field.input_type == "time":
-        return "12:00"
-    if field.input_type == "url":
-        return "https://example.com"
-    if "name" in title:
-        return "Testy McTestface"
-    if any(word in title for word in ("organization", "organisation", "company", "employer", "school", "team")):
-        return "Automated Testing Co"
-    if ftype == "paragraph":
-        return "Automated test response - please ignore."
-    if ftype == "short_answer" and field.required:
-        return "Automated test response"
     return None

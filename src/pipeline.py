@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 
 from .config import Config
-from .forms.filler import FillAborted, fill_form
+from .forms.filler import fill_form
 from .forms.parser import (
     canonical_urls,
     fetch_form_html,
@@ -194,9 +194,6 @@ class Pipeline:
             level = log.info if result.ok else log.error
             level("submit %s -> %s", form.submit_url, result.detail)
             return FormOutcome(url, "submitted" if result.ok else "error", result.detail)
-        except FillAborted as exc:
-            log.info("not filling form %s: %s", url, exc)
-            return FormOutcome(url, "skipped", str(exc))
         except Exception as exc:  # noqa: BLE001 - keep the pipeline alive per-form
             log.exception("form processing failed for %s", url)
             return FormOutcome(url, "error", str(exc))

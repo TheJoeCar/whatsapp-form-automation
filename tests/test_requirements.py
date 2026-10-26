@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.forms.filler import fill_form, FillAborted  # noqa: E402
+from src.forms.filler import fill_form  # noqa: E402
 from src.forms.parser import FormField, GoogleForm, parse_form_html  # noqa: E402
 from src.llm.client import extract_json  # noqa: E402
 from src.requirements import (
@@ -124,14 +124,12 @@ def test_fill_form_prompt():
     assert "entry.1111111111" in prompt
 
 
-def test_filler_heuristic_fallback_without_llm():
+def test_filler_no_fallback_without_llm():
     form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
-    values, _warnings = fill_form(form, llm=None)
-    by_entry = {f.entry_id: f for f in form.fields}
-    assert "email" in values["entry.2222222222"] or values["entry.2222222222"]
-    assert values["entry.3333333333"] == "Yes"  # first option
-    assert values["entry.4444444444"] == "Apple"
-    assert by_entry["entry.1111111111"].required and values["entry.1111111111"]
+    values, warnings = fill_form(form, llm=None)
+    # No fallback values — empty dict when LLM is unavailable
+    assert values == {}
+    assert any("no values" in w for w in warnings)
 
 
 def test_filler_falls_back_when_whole_reply_invalid():

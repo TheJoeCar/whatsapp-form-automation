@@ -144,11 +144,9 @@ def test_filler_partial_llm_success():
     assert any("not one of" in w for w in warnings)
 
 
-def test_filler_heuristic_fallback_without_llm():
+def test_filler_no_fallback_without_llm():
     form = parse_form_html(SYNTHETIC_HTML, url=FORM_URL)
-    values, _warnings = fill_form(form, llm=None)
-    by_entry = {f.entry_id: f for f in form.fields}
-    assert "email" in values["entry.2222222222"] or values["entry.2222222222"]
-    assert values["entry.3333333333"] == "Yes"  # first option
-    assert values["entry.4444444444"] == "Apple"
-    assert by_entry["entry.1111111111"].required and values["entry.1111111111"]
+    values, warnings = fill_form(form, llm=None)
+    # No fallback values — empty dict when LLM is unavailable
+    assert values == {}
+    assert any("no values" in w for w in warnings)
