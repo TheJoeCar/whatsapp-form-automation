@@ -209,7 +209,9 @@ def cmd_list_channels(config: Config, args) -> None:
 
 
 def cmd_debug_whatsapp(config: Config, args) -> None:
-    monitor = WhatsAppMonitor(config.whatsapp, headless=args.headless)
+    """Open WhatsApp Web and dump selector diagnostics."""
+    headless = not args.headed if hasattr(args, 'headed') else config.whatsapp.headless
+    monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
     monitor.start()
     try:
         ready = monitor.wait_ready(quiet=False)
@@ -298,7 +300,8 @@ def main(argv=None) -> None:
     sub.add_parser("login-whatsapp", help="one-time headful QR login (session is saved)")
 
     p = sub.add_parser("debug-whatsapp", help="open WhatsApp Web and dump selector diagnostics")
-    p.add_argument("--headless", action="store_true", help="run headless instead of headful")
+    p.add_argument("--headed", action="store_true", help="run headful (show browser window)")
+    p.add_argument("--headless", action="store_true", help="run headless (default)")
 
     p = sub.add_parser("list-channels", help="list all WhatsApp chats/channels with their names")
     p.add_argument("--headed", action="store_true", help="run headful (show browser window)")
