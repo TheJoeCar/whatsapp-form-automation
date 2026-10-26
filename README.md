@@ -7,26 +7,31 @@ own forms — dry-run is on by default.
 ## Setup
 
 ```bash
-# 1. Create a virtual environment
+# 1. Create a virtual environment and install the package
 uv venv --python 3.12
-uv pip install -r requirements.txt --python .venv/bin/python
-.venv/bin/python -m playwright install chromium
+uv pip install -e . --python .venv/bin/python
+.venv/bin/playwright install chromium
 
-# 2. Make the wa wrapper script executable (add to PATH or use ./wa)
-chmod +x wa
-# Optional: ln -s $(pwd)/wa /usr/local/bin/wa
+# 2. (Optional) Install the `wa` command globally
+#    Puts `wa` in ~/.local/bin so it works from any directory.
+uv tool install --editable .
 
 # 3. Add your OpenRouter API key
 cp .env.example .env
 # Edit .env and paste your key from https://openrouter.ai/keys
 
-# 3. Configure config.yaml
+# 4. Configure config.yaml
 # Set your WhatsApp channel name and adjust any defaults
 
-# 4. (Optional) Enable shell tab-completion
-source setup.sh  # adds venv to PATH, symlinks wa, registers completion, removes old alias
-# Add `source /path/to/setup.sh` to ~/.bashrc for persistence
+# 5. (Optional) Enable shell tab-completion
+#    bash-completion loads this file automatically on the next shell.
+register-python-argcomplete wa > ~/.local/share/bash-completion/completions/wa
 ```
+
+Without step 2, run the CLI as `.venv/bin/wa` instead of `wa`.
+
+Both `uv pip install -e .` and `uv tool install --editable .` install the `wa`
+entry point declared in `pyproject.toml`.
 
 ## Configuration
 
@@ -69,8 +74,6 @@ heuristics (every form is filled) with a logged warning.
 ## Usage
 
 ```bash
-alias wa="./wa"
-
 # Verification
 wa init                      # check config health
 wa check-llm                 # verify the model responds
@@ -95,9 +98,6 @@ wa run --no-ack              # process existing messages too (don't auto-ack)
 wa run --no-ack-last         # ack all messages except the most recent
 wa state --clear             # reset processed messages
 wa state --ack               # mark visible channel messages as seen (no submission)
-
-# Shell tab-completion (requires the wa wrapper script)
-eval "$(wa completion bash)"   # add to ~/.bashrc for persistence
 ```
 
 ## How It Works
@@ -159,9 +159,18 @@ No API key needed for Ollama; same code path.
 - **Old form links getting re-processed**: by default the pipeline auto-acks
   all visible messages before processing, so only new messages are handled.
   Use `wa run --no-ack` if you intentionally want to re-process old links.
-- **Tab-completion not working**: run `source setup.sh` to set up PATH
-  and register completion. Add `source /path/to/setup.sh` to your
-  `~/.bashrc` for persistence.
+- **`wa: command not found`**: install the CLI with `uv tool install --editable .`
+  and make sure `~/.local/bin` is on your `PATH`.
+- **Tab-completion not working**: make sure `bash-completion` is installed, then
+  regenerate the completion file:
+
+  ```bash
+  register-python-argcomplete wa > ~/.local/share/bash-completion/completions/wa
+  ```
+
+  Open a new shell to pick it up. If `register-python-argcomplete` isn't on your
+  `PATH`, call it from the environment that installed it, e.g.
+  `~/.local/share/uv/tools/whatsapp-form-automation/bin/register-python-argcomplete`.
 - **LLM refuses to fill the form**: the free model may safety-filter prompts.
   The filler falls back to no values (nothing submitted). Use neutral language
   in `requirements.md` (e.g. "test data" not "personal data").
@@ -170,6 +179,7 @@ No API key needed for Ollama; same code path.
 
 ```
 whatsapp-form-automation/
+├── pyproject.toml           # package metadata + `wa` entry point
 ├── config.yaml              # plumbing settings
 ├── requirements.md          # your personal requirements (gitignored)
 ├── requirements.md.example  # template for new users
@@ -202,4 +212,3 @@ whatsapp-form-automation/
 ## License
 
 MIT
-```

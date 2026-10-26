@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whatsapp-form-automation"
+version = "0.1.0"
+description = "Monitor a WhatsApp channel for Google Forms links and fill them with test data"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dynamic = ["dependencies"]
+
+[project.scripts]
+wa = "src.cli:main"
+
+[tool.setuptools]
+packages = ["src", "src.forms", "src.llm", "src.whatsapp"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
