@@ -12,17 +12,19 @@ uv venv --python 3.12
 uv pip install -r requirements.txt --python .venv/bin/python
 .venv/bin/python -m playwright install chromium
 
-# 2. Add your OpenRouter API key
+# 2. Make the wa wrapper script executable (add to PATH or use ./wa)
+chmod +x wa
+# Optional: ln -s $(pwd)/wa /usr/local/bin/wa
+
+# 3. Add your OpenRouter API key
 cp .env.example .env
 # Edit .env and paste your key from https://openrouter.ai/keys
 
 # 3. Configure config.yaml
 # Set your WhatsApp channel name and adjust any defaults
 
-# 4. (Optional) Enable shell tab-completion
-eval "$(register-python-argcomplete wa)"  # add to ~/.bashrc or ~/.zshrc
-# Or use the built-in command:
-eval "$(wa completion bash)"
+# 4. (Optional) Enable shell tab-completion (requires the `wa` wrapper script)
+eval "$(wa completion bash)"  # add to ~/.bashrc for persistence
 ```
 
 ## Configuration
@@ -66,13 +68,10 @@ heuristics (every form is filled) with a logged warning.
 ## Usage
 
 ```bash
-alias wa=".venv/bin/python -m src.cli"
+alias wa="./wa"
 
 # Verification
 wa init                      # check config health
-wa completion bash           # print bash completion script
-wa completion zsh            # print zsh completion script
-wa completion fish           # print fish completion script
 wa check-llm                 # verify the model responds
 wa list-free-models          # see available zero-cost models
 
@@ -92,9 +91,12 @@ wa run                       # one poll cycle (auto-acks existing messages by de
 wa run --loop                # keep polling until Ctrl+C
 wa run --submit              # actually submit (only after dry-run looks right)
 wa run --no-ack              # process existing messages too (don't auto-ack)
-wa run --no-ack-last         # ack all but the last message (process only the latest)
-wa state --clear             # reset processed messages (re-process everything)
+wa run --no-ack-last         # ack all messages except the most recent
+wa state --clear             # reset processed messages
 wa state --ack               # mark visible channel messages as seen (no submission)
+
+# Shell tab-completion (requires the wa wrapper script)
+eval "$(wa completion bash)"   # add to ~/.bashrc for persistence
 ```
 
 ## How It Works
@@ -156,6 +158,9 @@ No API key needed for Ollama; same code path.
 - **Old form links getting re-processed**: by default the pipeline auto-acks
   all visible messages before processing, so only new messages are handled.
   Use `wa run --no-ack` if you intentionally want to re-process old links.
+- **Tab-completion not working**: the `wa` wrapper script must be executable
+  and available in your PATH. Run `chmod +x wa` and either add it to your PATH
+  or use `./wa` directly. Then run `eval "$(wa completion bash)"` to enable completion.
 - **LLM refuses to fill the form**: the free model may safety-filter prompts.
   The filler falls back to no values (nothing submitted). Use neutral language
   in `requirements.md` (e.g. "test data" not "personal data").
