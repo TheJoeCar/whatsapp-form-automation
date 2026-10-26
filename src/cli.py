@@ -243,7 +243,7 @@ def cmd_list_free_models(config: Config, args) -> None:
 
 def cmd_state(config: Config, args) -> None:
     store = StateStore(config.pipeline.state_file)
-    print(f"{store.count()} processed message(s) in {store.state_file}")
+    print(f"{store.count()} processed message(s) in {store.path}")
     if args.clear:
         store.path.unlink(missing_ok=True)
         print("state cleared")

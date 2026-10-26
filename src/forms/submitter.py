@@ -58,12 +58,14 @@ def submit_form(form: GoogleForm, values: dict[str, str | list[str]], timeout: f
 
     final_url = resp.url.lower()
     body = resp.text.lower()
+    # Check for success markers first — the form page HTML always contains
+    # fb_public_load_data_ even after a successful submission.
+    if resp.status_code == 200 and any(marker in body or marker in final_url for marker in _SUCCESS_MARKERS):
+        return SubmitResult(True, 200, "Response recorded")
     if resp.status_code == 200 and "fb_public_load_data_" in body:
         return SubmitResult(
             False, 200, "Form page re-served - submission was not accepted (check required fields / options)"
         )
-    if resp.status_code == 200 and any(marker in body or marker in final_url for marker in _SUCCESS_MARKERS):
-        return SubmitResult(True, 200, "Response recorded")
     if resp.status_code == 200:
         return SubmitResult(False, 200, "200 but no confirmation marker - verify manually in the form responses tab")
 

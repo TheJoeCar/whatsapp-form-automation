@@ -48,4 +48,4 @@ pipeline:
   state_file: state/processed.json
   log_file: logs/pipeline.log
   # Safety: dry-run prints what it *would* do. Set false only after testing.
-  dry_run: true
+  dry_run: false 
