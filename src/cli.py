@@ -78,6 +78,8 @@ def cmd_run(config: Config, args) -> None:
         config,
         dry_run=None if args.dry_run is None else args.dry_run,
         headless=False if args.headed else None,
+        channel=args.channel,
+        poll_interval=args.poll_interval,
     )
     if args.loop:
         pipeline.run_forever(
@@ -337,6 +339,10 @@ def main(argv=None) -> None:
                    help="process existing messages too (don't auto-acknowledge)")
     p.add_argument("--no-ack-last", action="store_true",
                    help="ack all messages except the most recent one (process only the last)")
+    p.add_argument("--channel", default=None,
+                   help="override the configured WhatsApp channel")
+    p.add_argument("--poll-interval", type=int, default=None,
+                   help="override the poll interval in seconds")
     p.add_argument("-v", "--verbose", action="store_true", help="also log to console")
 
     p = sub.add_parser("parse-form", help="fetch and parse a Google Form, print fields")

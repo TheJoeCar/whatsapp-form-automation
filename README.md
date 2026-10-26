@@ -96,6 +96,8 @@ wa run --loop                # keep polling until Ctrl+C
 wa run --submit              # actually submit (only after dry-run looks right)
 wa run --no-ack              # process existing messages too (don't auto-ack)
 wa run --no-ack-last         # ack all messages except the most recent
+wa run --channel "My Channel"  # override the configured channel
+wa run --poll-interval 30    # override poll interval in seconds
 wa state --clear             # reset processed messages
 wa state --ack               # mark visible channel messages as seen (no submission)
 ```
@@ -124,6 +126,8 @@ This behavior can be overridden:
 | (default) | Auto-ack existing messages, process only new ones |
 | `--no-ack` | Process all visible messages including old ones |
 | `--no-ack-last` | Ack all messages except the most recent; process only the last |
+| `--channel` | Override the configured WhatsApp channel for this run |
+| `--poll-interval N` | Override the poll interval in seconds for this run |
 
 The `wa state --ack` and `wa state --clear` commands provide manual control
 over the processed-message store.
