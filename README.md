@@ -80,9 +80,11 @@ wa debug-whatsapp            # selector diagnostics if extraction breaks
 wa list-channels             # list all chats/channels with their names
 
 # The pipeline
-wa run                       # one poll cycle (dry-run by default)
+wa run                       # one poll cycle (auto-acks existing messages by default)
 wa run --loop                # keep polling until Ctrl+C
 wa run --submit              # actually submit (only after dry-run looks right)
+wa run --no-ack              # process existing messages too (don't auto-ack)
+wa run --no-ack-last         # ack all but the last message (process only the latest)
 wa state --clear             # reset processed messages (re-process everything)
 wa state --ack               # mark visible channel messages as seen (no submission)
 ```
@@ -97,20 +99,23 @@ wa state --ack               # mark visible channel messages as seen (no submiss
 6. Values are submitted via HTTP POST to the form's `formResponse` endpoint
 7. The result is logged and the message is marked as processed
 
-### Acknowledging Existing Messages
+### Auto-Acknowledgment
 
-When the state file is empty (first run or after `--clear`), the monitor will
-process any form links it finds in the visible channel history — including links
-posted before the script started. To avoid this, run `--ack` after setup to
-mark all currently visible messages as seen:
+By default, when the pipeline starts it automatically acknowledges (marks as seen)
+all currently visible messages in the channel before processing. This prevents
+old form links from being re-processed on every restart. Only messages that
+arrive *after* the acknowledgment are handled.
 
-```bash
-wa state --ack   # marks visible messages as seen, no submission
-wa run           # now only new messages are processed
-```
+This behavior can be overridden:
 
-This is recommended after first login or whenever you want to start fresh
-without re-processing old links.
+| Flag | Effect |
+|---|---|
+| (default) | Auto-ack existing messages, process only new ones |
+| `--no-ack` | Process all visible messages including old ones |
+| `--no-ack-last` | Ack all messages except the most recent; process only the last |
+
+The `wa state --ack` and `wa state --clear` commands provide manual control
+over the processed-message store.
 
 ## Swapping in a Local Model
 
@@ -140,7 +145,9 @@ No API key needed for Ollama; same code path.
   heuristics when the LLM fails, so the pipeline still works.
 - **Submission rejected**: single-page forms only. Check the form is accepting
   responses and CAPTCHA isn't blocking the submission.
-- **Old form links getting re-processed**: when the state file is empty (first run or after `--clear`), the monitor processes all visible messages in the channel, including old links. Run `wa state --ack` after setup to mark existing messages as seen. Only new messages arriving after that will be processed.
+- **Old form links getting re-processed**: by default the pipeline auto-acks
+  all visible messages before processing, so only new messages are handled.
+  Use `wa run --no-ack` if you intentionally want to re-process old links.
 - **LLM refuses to fill the form**: the free model may safety-filter prompts.
   The filler falls back to no values (nothing submitted). Use neutral language
   in `requirements.md` (e.g. "test data" not "personal data").

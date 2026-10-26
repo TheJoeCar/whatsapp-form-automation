@@ -75,9 +75,15 @@ def cmd_run(config: Config, args) -> None:
         headless=False if args.headed else None,
     )
     if args.loop:
-        pipeline.run_forever()
+        pipeline.run_forever(
+            no_ack=args.no_ack,
+            no_ack_last=args.no_ack_last,
+        )
     else:
-        handled = pipeline.run_once()
+        handled = pipeline.run_once(
+            no_ack=args.no_ack,
+            no_ack_last=args.no_ack_last,
+        )
         print(f"done - {handled} new message(s) handled (see {config.pipeline.log_file})")
 
 
@@ -292,6 +298,10 @@ def main(argv=None) -> None:
     p.add_argument("--submit", dest="dry_run", action="store_false",
                    help="force real submissions (override config)")
     p.add_argument("--headed", action="store_true", help="run WhatsApp browser headful (debugging)")
+    p.add_argument("--no-ack", action="store_true",
+                   help="process existing messages too (don't auto-acknowledge)")
+    p.add_argument("--no-ack-last", action="store_true",
+                   help="ack all messages except the most recent one (process only the last)")
     p.add_argument("-v", "--verbose", action="store_true", help="also log to console")
 
     p = sub.add_parser("parse-form", help="fetch and parse a Google Form, print fields")
