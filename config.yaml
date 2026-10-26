@@ -25,8 +25,9 @@ whatsapp:
   channel: "Test community"
   poll_interval_seconds: 60
   session_dir: data/whatsapp_session
-  # Login must be headful (QR scan). Monitoring can run headless afterwards.
-  headless: true
+  # WhatsApp Web is unreliable headless; keep the browser window visible.
+  # (Login must be headful anyway: run `login-whatsapp` once.)
+  headless: false
   max_messages_per_poll: 25
   # DOM selectors, best-effort. WhatsApp Web changes class names often;
   # role-based selectors are tried first, then these. If extraction breaks,

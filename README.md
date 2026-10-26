@@ -61,7 +61,7 @@ If `requirements.md` is missing the pipeline falls back to legacy test mode
 | config.yaml | What | Default |
 |---|---|---|
 | `llm` | provider, model, endpoint | OpenRouter, `openrouter/free` (auto-picks a free model) |
-| `whatsapp` | channel name, poll interval, session dir, selectors | 60s polling, headless |
+| `whatsapp` | channel name, poll interval, session dir, selectors | 60s polling, headful (WhatsApp Web is unreliable headless) |
 | `forms.requirements_file` | path to the requirements document | `requirements.md` |
 | `pipeline` | state file, log file, **`dry_run`** | **dry run ON** |
 
@@ -117,8 +117,11 @@ No API key needed for Ollama; same code path.
 - **Form fields show `(title not found)`** or wrong types: Google changed their
   DOM. Run `wa parse-form <url>`, compare with the real form, adjust the
   heuristics in `src/forms/parser.py` (`_title_for_field`, `_label_for_input`).
-- **No messages found / search fails**: run `wa debug-whatsapp`, check the
-  selector match counts, adjust `whatsapp.selectors` in config.
+- **No messages found / search fails**: run `wa debug-whatsapp --headed`, check the
+  selector counts against the verified list in `src/whatsapp/monitor.py`
+  (chat rows `[data-testid="chat-list"] div[role="row"]`, search `input[role="textbox"]`,
+  messages `[data-testid^="conv-msg-"]`). WhatsApp changes its DOM periodically;
+  `scripts/inspect_whatsapp.py` and `scripts/inspect_chat.py` dump the live structure.
 - **LLM errors / rate limits**: free models have rate limits; `wa
   list-free-models` and pick another id in config. The filler falls back to
   deterministic heuristics when the LLM fails, so the pipeline still works.

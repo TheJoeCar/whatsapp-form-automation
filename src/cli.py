@@ -193,17 +193,14 @@ def cmd_list_channels(config: Config, args) -> None:
         if not monitor.wait_ready(quiet=False):
             print("WhatsApp Web not ready — are you logged in?")
             return
-        rows = monitor.page.get_by_role("listitem").all()
-        print(f"Found {len(rows)} chat(s):")
-        for i, item in enumerate(rows[:30]):
-            label = item.get_attribute("aria-label") or "?"
-            # Try to get the last message preview
-            text_sel = config.whatsapp.selectors.get("message_text", "span.selectable-text")
-            msg = item.locator(text_sel).first
-            preview = msg.inner_text(timeout=500).strip()[:60] if msg.count() > 0 else ""
-            print(f"  {i+1}. {label}")
-            if preview:
-                print(f"     last msg: {preview}")
+        from .whatsapp.monitor import CHAT_ROWS
+
+        rows = monitor.page.locator(CHAT_ROWS)
+        print(f"Found {rows.count()} chat row(s):")
+        for i in range(min(30, rows.count())):
+            text = (rows.nth(i).inner_text() or "").strip().replace("\n", " | ")
+            if text:
+                print(f"  {i + 1}. {text[:100]}")
     finally:
         monitor.stop()
 

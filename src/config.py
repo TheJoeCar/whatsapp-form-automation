@@ -32,7 +32,8 @@ class WhatsAppConfig:
     channel: str = "My Channel"
     poll_interval_seconds: int = 60
     session_dir: Path = PROJECT_ROOT / "data" / "whatsapp_session"
-    headless: bool = True
+    # WhatsApp Web is flaky in headless Chromium; headful is much more reliable.
+    headless: bool = False
     max_messages_per_poll: int = 25
     selectors: dict = field(default_factory=dict)
 

@@ -1,9 +1,17 @@
 """WhatsApp Web monitoring via Playwright.
 
-WhatsApp Web obfuscates class names and occasionally changes its DOM, so this
-module prefers role/aria-based selectors and treats class-based selectors as
-config-overridable fallbacks. If extraction breaks, run
-`python -m src.cli debug-whatsapp` to see which selectors still match.
+Verified against WhatsApp Web (Oct 2026 DOM):
+  - chat list       : [data-testid="chat-list"] div[role="row"]
+  - search box      : input[role="textbox"]  (aria-label is localized)
+  - message rows    : [data-testid^="conv-msg-"] with data-id = message id
+  - message text    : span.selectable-text inside the row
+  - links           : <a href> inside the row (more reliable than text regex)
+  - open chat panel : [data-testid="conversation-panel-messages"]
+
+Announcements channels are detected by the header subtitle
+("Nur Admins koennen Nachrichten senden" / "Only admins can send messages"),
+which distinguishes the announcements channel from the community's general chat
+when both rows share the community name.
 
 Login happens once, headful, via QR scan (`python -m src.cli login-whatsapp`);
 the session persists in the configured profile directory.
@@ -12,26 +20,47 @@ the session persists in the configured profile directory.
 from __future__ import annotations
 
 import hashlib
+import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..config import WhatsAppConfig
 
 WEB_URL = "https://web.whatsapp.com/"
-LOGIN_TIMEOUT_S = 300
+LOGIN_TIMEOUT_S = 180
+
+CHAT_LIST = '[data-testid="chat-list"]'
+CHAT_ROWS = f'{CHAT_LIST} div[role="row"]'
+SEARCH_BOX = 'input[role="textbox"]'
+MESSAGE_ROWS = '[data-testid^="conv-msg-"]'
+MESSAGE_TEXT = 'span.selectable-text'
+CONVERSATION_PANEL = '[data-testid="conversation-panel-messages"]'
+CHAT_HEADER = '[data-testid="conversation-info-header"]'
+
+_NOISE = (
+    "end-to-end encrypted",
+    "ende-zu-ende-verschlüsselt",
+    "click to load",
+    "welcome to your community",
+    "willkommen in deiner community",
+    "unread messages",
+)
+
+_ADMIN_ONLY = ("admin", "administrator")  # matches EN + DE subtitle
 
 
 @dataclass
 class WhatsAppMessage:
     message_id: str
     text: str
-    meta: str  # e.g. "[18:04, 26/10/2026] Sender: " when available
+    meta: str = ""  # e.g. "[18:04, 26/10/2026] Sender: " when available
+    links: list[str] = field(default_factory=list)  # <a href> values in the row
 
     @classmethod
-    def make(cls, message_id: str, text: str, meta: str) -> "WhatsAppMessage":
+    def make(cls, message_id: str, text: str, meta: str = "", links: list[str] | None = None) -> "WhatsAppMessage":
         if not message_id:
-            message_id = hashlib.sha1(f"{meta}|{text}".encode()).hexdigest()[:16]
-        return cls(message_id=message_id, text=text, meta=meta)
+            message_id = hashlib.sha1(f"{meta}|{text}|{'|'.join(links or [])}".encode()).hexdigest()[:16]
+        return cls(message_id=message_id, text=text, meta=meta, links=links or [])
 
 
 class WhatsAppMonitor:
@@ -78,7 +107,7 @@ class WhatsAppMonitor:
     def is_ready(self) -> bool:
         """True when the chat list has rendered (i.e. logged in)."""
         try:
-            return self.page.locator('div[role="listitem"]').count() > 0
+            return self.page.locator(CHAT_LIST).count() > 0
         except Exception:
             return False
 
@@ -92,8 +121,9 @@ class WhatsAppMonitor:
             return False
 
     def wait_ready(self, timeout_s: int = LOGIN_TIMEOUT_S, quiet: bool = False) -> bool:
-        """Wait for login. If a QR code is up, tell the user to scan it."""
+        """Wait for login/load, printing progress so it never looks hung."""
         deadline = time.time() + timeout_s
+        last_report = 0.0
         qr_announced = False
         while time.time() < deadline:
             if self.is_ready():
@@ -105,6 +135,11 @@ class WhatsAppMonitor:
                       f"(or run `python -m src.cli login-whatsapp` headful first). "
                       f"Waiting up to {timeout_s}s...")
                 qr_announced = True
+            now = time.time()
+            if not quiet and now - last_report > 10:
+                left = int(deadline - now)
+                print(f"[whatsapp] waiting for chat list... {left}s left")
+                last_report = now
             time.sleep(2)
         return False
 
@@ -112,46 +147,70 @@ class WhatsAppMonitor:
     # Channel + messages
 
     def open_channel(self, name: str) -> bool:
-        """Open the configured chat/channel by searching for its name."""
-        page = self.page
-        box = self._find_search_box()
-        if box is None:
-            print("[whatsapp] could not find the search box - run debug-whatsapp")
-            return False
-        box.click()
-        box.fill("")
-        page.keyboard.type(name)
-        time.sleep(1.5)  # let search results render
+        """Open the configured chat/announcement channel by searching its name.
 
-        items = page.get_by_role("listitem").filter(has_text=name)
-        if items.count() == 0:
-            print(f"[whatsapp] no chat matches {name!r} in search results")
+        When several rows share the name (community announcements vs general),
+        prefer the one flagged admin-only in the chat header.
+        """
+        page = self.page
+        box = page.locator(SEARCH_BOX).first
+        if box.count() == 0:
+            print("[whatsapp] search box not found - run debug-whatsapp")
             return False
-        items.first.click()
-        time.sleep(1.5)  # let the message list render
-        return True
+
+        box.click()
+        box.fill(name)
+        time.sleep(1.5)  # search debounce
+
+        rows = page.locator(CHAT_ROWS)
+        matches = [
+            i for i in range(rows.count())
+            if name.lower() in (rows.nth(i).inner_text() or "").lower()
+            and rows.nth(i).locator('[data-testid="cell-frame-container"]').count() > 0
+        ]
+        if not matches:
+            preview = [((rows.nth(i).inner_text() or "").strip().replace("\n", " | "))[:60]
+                       for i in range(min(5, rows.count()))]
+            print(f"[whatsapp] no chat matches {name!r}; first rows: {preview}")
+            return False
+
+        first_with_name = False
+        for i in matches[:3]:
+            rows.nth(i).click()
+            if not self._wait_conversation():
+                continue
+            header = self._header_text()
+            first_with_name = first_with_name or name.lower() in header.lower()
+            if any(tag in header.lower() for tag in _ADMIN_ONLY):
+                return True
+        return first_with_name
 
     def read_messages(self, limit: int | None = None) -> list[WhatsAppMessage]:
         """Read the most recent visible messages in the open chat."""
         limit = limit or self.config.max_messages_per_poll
         page = self.page
-        row_sel = self.config.selectors.get("message_row", 'div[data-id]')
-        text_sel = self.config.selectors.get("message_text", 'span.selectable-text')
-
-        rows = page.locator(row_sel)
+        rows = page.locator(MESSAGE_ROWS)
         total = rows.count()
         messages: list[WhatsAppMessage] = []
         for i in range(max(0, total - limit), total):
             row = rows.nth(i)
             try:
-                row_id = row.get_attribute("data-id") or ""
-                meta = row.get_attribute("data-pre-plain-text") or ""
-                text_el = row.locator(text_sel).first
-                text = text_el.inner_text(timeout=1000).strip() if text_el.count() > 0 else ""
+                message_id = row.get_attribute("data-id") or ""
+                parts = row.locator(MESSAGE_TEXT).all_inner_texts()
+                text = "\n".join(p.strip() for p in parts if p.strip())
+                meta = row.evaluate(
+                    """el => el.querySelector('[data-pre-plain-text]')?.getAttribute('data-pre-plain-text') || ''"""
+                )
+                links = row.evaluate(
+                    """el => Array.from(el.querySelectorAll('a[href]')).map(a => a.getAttribute('href'))"""
+                ) or []
             except Exception:
                 continue
-            if text and _is_real_message(text, meta):
-                messages.append(WhatsAppMessage.make(row_id, text, meta))
+            if not text and not links:
+                continue  # system message (no copyable text)
+            if _is_noise(text):
+                continue
+            messages.append(WhatsAppMessage.make(message_id, text, meta, links))
         return messages
 
     def poll_new_messages(self) -> list[WhatsAppMessage]:
@@ -163,67 +222,49 @@ class WhatsAppMonitor:
     # ------------------------------------------------------------------ #
     # Internals
 
-    def _find_search_box(self):
-        page = self.page
-        # Role/aria first - survives class-name obfuscation.
-        for box in page.get_by_role("textbox").all():
-            try:
-                label = (box.get_attribute("aria-label") or "") + (box.get_attribute("title") or "")
-                if "search" in label.lower():
-                    return box
-            except Exception:
-                continue
-        # Fallbacks that have historically matched the search field.
-        for sel in ('div[contenteditable="true"][data-tab="3"]', 'div[role="textbox"][contenteditable="true"]'):
-            loc = page.locator(sel)
-            if loc.count() > 0:
-                return loc.first
-        return None
+    def _wait_conversation(self, timeout_ms: int = 15000) -> bool:
+        try:
+            self.page.locator(CONVERSATION_PANEL).first.wait_for(state="attached", timeout=timeout_ms)
+            time.sleep(1.0)  # let recent messages render
+            return True
+        except Exception:
+            return False
+
+    def _header_text(self) -> str:
+        try:
+            header = self.page.locator(CHAT_HEADER).first
+            return (header.inner_text(timeout=2000) or "").strip()
+        except Exception:
+            return ""
 
     def diagnostics(self) -> str:
         """Selector health report for debug-whatsapp."""
         page = self.page
-        rows = []
-
-        def count(sel: str) -> str:
+        rows = ["=== selector diagnostics ==="]
+        for sel in (CHAT_LIST, CHAT_ROWS, SEARCH_BOX, MESSAGE_ROWS, MESSAGE_TEXT, CONVERSATION_PANEL, "canvas"):
             try:
-                return f"{sel}: {page.locator(sel).count()} matches"
+                rows.append(f"{sel}: {page.locator(sel).count()} matches")
             except Exception as exc:
-                return f"{sel}: ERROR {exc}"
-
-        rows.append("=== selector diagnostics ===")
-        for sel in (
-            'div[role="listitem"]',
-            'div[data-id]',
-            'span.selectable-text',
-            'div[data-pre-plain-text]',
-            'div[contenteditable="true"]',
-        ):
-            rows.append(count(sel))
-        labels = []
-        for item in page.get_by_role("listitem").all()[:5]:
-            labels.append(item.get_attribute("aria-label") or "?")
-        rows.append(f"first listitem aria-labels: {labels}")
+                rows.append(f"{sel}: ERROR {exc}")
+        preview = []
+        for i in range(min(8, self.page.locator(CHAT_ROWS).count())):
+            text = (self.page.locator(CHAT_ROWS).nth(i).inner_text() or "").strip().replace("\n", " | ")
+            preview.append(text[:80])
+        rows.append(f"chat rows: {preview}")
         return "\n".join(rows)
 
 
-def _is_real_message(text: str, meta: str) -> bool:
-    """Filter out UI noise like the encryption notice."""
-    noise = ("end-to-end encrypted", "click to load", "unread messages")
-    return not any(n in text.lower() for n in noise)
+def _is_noise(text: str) -> bool:
+    lowered = text.lower()
+    return any(noise in lowered for noise in _NOISE)
 
 
 def re_qr_hints():
-    import re
-
-    return re.compile("scan me|link a device|use whatsapp on your", re.IGNORECASE)
+    return re.compile("scan me|link a device|use whatsapp on your|qr-code|qr code", re.IGNORECASE)
 
 
 def login_interactive(session_dir) -> bool:
-    """One-time headful login: scan the QR code in the opened browser window.
-
-    The session persists in `session_dir`, so later runs (headless) reuse it.
-    """
+    """One-time headful login: scan the QR code in the opened browser window."""
     from ..config import WhatsAppConfig
 
     config = WhatsAppConfig(session_dir=session_dir)

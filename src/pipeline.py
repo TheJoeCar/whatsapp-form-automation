@@ -16,7 +16,7 @@ from .forms.parser import (
     parse_form_html,
 )
 from .forms.submitter import submit_form
-from .llm.client import LLMClient
+from .llm.client import LLMClient, extract_json
 from .requirements import load_requirements, evaluate_form_prompt, fill_form_prompt
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMessage, WhatsAppMonitor
@@ -69,54 +69,69 @@ class Pipeline:
     # Main loops
 
     def run_once(self) -> int:
-        """One poll cycle. Returns the number of new messages handled."""
-        new_messages = self._collect_new_messages()
-        for message in new_messages:
-            outcome = self._handle_message(message)
-            self.state.mark(message.message_id, outcome)
-        if new_messages:
-            self.state.save()
-        return len(new_messages)
+        """One poll cycle (launches its own browser). Returns messages handled."""
+        headless = self._headless if self._headless is not None else self.config.whatsapp.headless
+        with WhatsAppMonitor(self.config.whatsapp, headless=headless) as monitor:
+            if not monitor.wait_ready(quiet=False):
+                raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
+            return self._poll_once(monitor)
 
     def run_forever(self) -> None:
+        """Keep one browser session open and poll on an interval."""
         interval = self.config.whatsapp.poll_interval_seconds
+        headless = self._headless if self._headless is not None else self.config.whatsapp.headless
         log.info("polling %r every %ss (Ctrl+C to stop)", self.config.whatsapp.channel, interval)
         while True:
             try:
-                handled = self.run_once()
-                if handled:
-                    log.info("handled %d new message(s)", handled)
+                with WhatsAppMonitor(self.config.whatsapp, headless=headless) as monitor:
+                    if not monitor.wait_ready(quiet=False):
+                        raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
+                    log.info("monitor ready - watching %r", self.config.whatsapp.channel)
+                    while True:
+                        handled = self._poll_once(monitor)
+                        if handled:
+                            log.info("handled %d new message(s)", handled)
+                        time.sleep(interval)
+            except KeyboardInterrupt:
+                raise
             except Exception:
-                log.exception("poll cycle failed - retrying next interval")
-            time.sleep(interval)
+                log.exception("poll cycle failed - reopening browser next interval")
+                time.sleep(interval)
+
+    def _poll_once(self, monitor: WhatsAppMonitor) -> int:
+        """Poll using an already-open monitor. Returns messages handled."""
+        if not monitor.open_channel(self.config.whatsapp.channel):
+            log.warning("could not open channel %r this cycle", self.config.whatsapp.channel)
+            return 0
+        messages = monitor.read_messages()
+        fresh = [m for m in messages if not self.state.seen(m.message_id)]
+        log.info("read %d message(s), %d new", len(messages), len(fresh))
+        for message in fresh:
+            outcome = self._handle_message(message)
+            self.state.mark(message.message_id, outcome)
+        if fresh:
+            self.state.save()
+        return len(fresh)
 
     # ------------------------------------------------------------------ #
     # Steps
 
-    def _collect_new_messages(self) -> list[WhatsAppMessage]:
-        headless = self._headless if self._headless is not None else self.config.whatsapp.headless
-        with WhatsAppMonitor(self.config.whatsapp, headless=headless) as monitor:
-            if not monitor.wait_ready(quiet=True):
-                raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
-            if not monitor.open_channel(self.config.whatsapp.channel):
-                raise RuntimeError(f"could not open channel {self.config.whatsapp.channel!r}")
-            messages = monitor.read_messages()
-
-        fresh = [m for m in messages if not self.state.seen(m.message_id)]
-        log.info("read %d message(s), %d new", len(messages), len(fresh))
-        return fresh
-
     def _handle_message(self, message: WhatsAppMessage) -> str:
-        urls = URL_RE.findall(message.text)
+        urls = [_ensure_scheme(u) for u in URL_RE.findall(message.text)]
+        urls += [u for u in message.links if u.startswith("http")]
+        # De-duplicate while preserving order.
+        seen: set[str] = set()
+        urls = [u for u in urls if not (u in seen or seen.add(u))]
+
         log.info("message %s: %d URL(s) found", message.message_id, len(urls))
-        form_urls = [u for u in urls if is_google_forms_url(_ensure_scheme(u))]
+        form_urls = [u for u in urls if is_google_forms_url(u)]
 
         if not form_urls:
             return "no_form_link" if urls else "no_link"
 
         results = []
         for url in form_urls:
-            outcome = self._process_form(_ensure_scheme(url))
+            outcome = self._process_form(url)
             results.append(outcome)
         return "; ".join(f"{o.action}: {o.detail}" for o in results) or "handled"
 
