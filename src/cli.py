@@ -186,7 +186,8 @@ def cmd_login(config: Config, args) -> None:
 
 def cmd_list_channels(config: Config, args) -> None:
     """List all WhatsApp chats/channels with their names."""
-    monitor = WhatsAppMonitor(config.whatsapp, headless=args.headless)
+    headless = not args.headed if hasattr(args, 'headed') else config.whatsapp.headless
+    monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
     monitor.start()
     try:
         if not monitor.wait_ready(quiet=False):
@@ -300,7 +301,8 @@ def main(argv=None) -> None:
     p.add_argument("--headless", action="store_true", help="run headless instead of headful")
 
     p = sub.add_parser("list-channels", help="list all WhatsApp chats/channels with their names")
-    p.add_argument("--headless", action="store_true", help="run headless instead of headful")
+    p.add_argument("--headed", action="store_true", help="run headful (show browser window)")
+    p.add_argument("--headless", action="store_true", help="run headless (default)")
 
     sub.add_parser("check-llm", help="send a tiny prompt to the configured model")
 
