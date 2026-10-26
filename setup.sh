@@ -25,9 +25,9 @@ if [[ ! -L "$VENV_BIN/wa" ]]; then
     ln -sf "$SCRIPT_DIR/wa" "$VENV_BIN/wa"
 fi
 
-# Register tab-completion for wa
-if command -v register-python-argcomplete &>/dev/null; then
-    eval "$(register-python-argcomplete wa)"
+# Register tab-completion for wa using the built-in completion command
+if command -v wa &>/dev/null; then
+    eval "$(wa completion bash)"
 fi
 
 # Only print messages when run directly (not sourced)
