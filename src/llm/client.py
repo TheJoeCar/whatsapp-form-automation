@@ -44,8 +44,19 @@ class LLMClient:
             h["X-Title"] = "WhatsApp Form Automation"
         return h
 
-    def chat(self, messages: list[dict], max_tokens: int = 1500) -> str:
-        """Send a chat completion, retrying transient failures with backoff."""
+    def chat(
+        self,
+        messages: list[dict],
+        max_tokens: int = 1500,
+        response_format: dict | None = None,
+    ) -> str:
+        """Send a chat completion, retrying transient failures with backoff.
+
+        `response_format` enables provider-side structured output (e.g.
+        {"type": "json_object"}). If the provider rejects it with a 400, the
+        request is retried once without it so any OpenAI-compatible backend
+        (Ollama, llama.cpp, ...) keeps working.
+        """
         headers = self._headers()
         payload = {
             "model": self.model,
@@ -53,11 +64,20 @@ class LLMClient:
             "temperature": self.temperature,
             "max_tokens": max_tokens,
         }
+        structured = response_format is not None
+        if structured:
+            payload["response_format"] = response_format
         url = f"{self.base_url}/chat/completions"
         last_err: Exception | None = None
         for attempt in range(1, self.max_retries + 1):
             try:
                 resp = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+                if resp.status_code == 400 and structured:
+                    # Provider doesn't support response_format; drop it and
+                    # retry inline without consuming a retry attempt.
+                    payload.pop("response_format", None)
+                    structured = False
+                    resp = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
                 if resp.status_code in (429, 500, 502, 503) and attempt < self.max_retries:
                     wait = 2**attempt
                     time.sleep(wait)
@@ -89,10 +109,17 @@ class LLMClient:
                     time.sleep(2**attempt)
         raise LLMError(f"LLM request failed after {self.max_retries} attempts: {last_err}")
 
-    def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
+    def complete(
+        self,
+        system: str,
+        user: str,
+        max_tokens: int = 1500,
+        response_format: dict | None = None,
+    ) -> str:
         return self.chat(
             [{"role": "system", "content": system}, {"role": "user", "content": user}],
             max_tokens=max_tokens,
+            response_format=response_format,
         )
 
 

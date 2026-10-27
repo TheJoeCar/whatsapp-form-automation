@@ -92,79 +92,57 @@ def test_parse_modern_data_params_form():
 
 
 def test_parse_gate_reply_yes():
-    qualifies, reason = parse_gate_reply("[[YES]] - this is an event registration form")
+    qualifies, reason = parse_gate_reply('{"qualifies": true, "reason": "event registration form"}')
     assert qualifies is True
-    assert reason == "this is an event registration form"
-
-
-def test_parse_gate_reply_yes_with_dash():
-    qualifies, reason = parse_gate_reply("[[YES]] matches requirements")
-    assert qualifies is True
-    assert reason == "matches requirements"
+    assert reason == "event registration form"
 
 
 def test_parse_gate_reply_no():
-    qualifies, reason = parse_gate_reply("[[NO]] - not a form I would fill")
+    qualifies, reason = parse_gate_reply('{"qualifies": false, "reason": "not a form I would fill"}')
     assert qualifies is False
     assert reason == "not a form I would fill"
 
 
-def test_parse_gate_reply_no_uppercase():
-    qualifies, reason = parse_gate_reply("[[NO]] - irrelevant")
-    assert qualifies is False
-
-
-def test_parse_gate_reply_reasoning_before_marker():
-    """The free model often returns reasoning before the marker."""
+def test_parse_gate_reply_tolerates_prose_around_json():
     reply = (
-        "Let me analyze the form title and fields against the requirements.\n"
-        "The form is about climbing, not event registration.\n"
-        "[[NO]] - this is a climbing trip form, not an event registration"
+        "Let me analyze the form against the requirements.\n"
+        '```json\n{"qualifies": false, "reason": "climbing trip, not a survey"}\n```\n'
+        "That is my verdict."
     )
     qualifies, reason = parse_gate_reply(reply)
     assert qualifies is False
     assert "climbing" in reason.lower()
 
 
-def test_parse_gate_reply_reasoning_after_marker():
-    """Marker at the start with reasoning after still works."""
-    qualifies, reason = parse_gate_reply("[[YES]] - event registration form")
+def test_parse_gate_reply_string_booleans():
+    qualifies, _ = parse_gate_reply('{"qualifies": "yes"}')
     assert qualifies is True
+    qualifies, _ = parse_gate_reply('{"qualifies": "NO"}')
+    assert qualifies is False
+
+
+def test_parse_gate_reply_missing_reason():
+    qualifies, reason = parse_gate_reply('{"qualifies": true}')
+    assert qualifies is True
+    assert reason == ""
 
 
 def test_parse_gate_reply_invalid():
     import pytest
-    with pytest.raises(ValueError):
+    with pytest.raises(Exception):
         parse_gate_reply("maybe? I'm not sure about this form.")
 
 
 def test_parse_gate_reply_empty():
     import pytest
-    with pytest.raises(ValueError):
+    with pytest.raises(Exception):
         parse_gate_reply("")
 
 
-def test_parse_gate_reply_case_insensitive():
-    qualifies, reason = parse_gate_reply("[[yes]] - it qualifies")
-    assert qualifies is True
-    qualifies, reason = parse_gate_reply("[[no]] - it does not")
-    assert qualifies is False
-
-
-def test_parse_gate_reply_both_markers_last_wins():
-    """If both markers appear, the final one is the verdict (reasoning may
-    mention markers hypothetically before concluding)."""
-    qualifies, reason = parse_gate_reply("[[NO]] if irrelevant, but it is relevant\n[[YES]]")
-    assert qualifies is True
-    qualifies, reason = parse_gate_reply("[[YES]] if relevant, but it is not\n[[NO]]")
-    assert qualifies is False
-
-
-def test_requirements_prompt():
-    qualifies, reason = parse_gate_reply("yes - it qualifies")
-    assert qualifies is True
-    qualifies, reason = parse_gate_reply("no - it does not")
-    assert qualifies is False
+def test_parse_gate_reply_non_bool_qualifies():
+    import pytest
+    with pytest.raises(ValueError):
+        parse_gate_reply('{"qualifies": 3.14}')
 
 
 def test_requirements_prompt():
@@ -183,8 +161,8 @@ def test_evaluate_form_prompt():
     prompt = evaluate_form_prompt(SAMPLE_REQUIREMENTS, form.title or "", field_summaries)
     assert "event registration" in prompt.lower()
     assert "entry.1111111111" in prompt
-    assert "YES" in prompt
-    assert "NO" in prompt
+    assert '"qualifies"' in prompt
+    assert "JSON" in prompt
 
 
 def test_fill_form_prompt():

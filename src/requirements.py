@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .llm.client import extract_json
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -44,55 +46,39 @@ def evaluate_form_prompt(requirements_text: str, form_title: str, fields: list[d
     return (
         requirements_prompt(requirements_text)
         + "Decide if this form qualifies based on the requirements above.\n"
-        "You may think it through step by step first.\n"
-        "Then, on the final line of your reply, write exactly one marker:\n"
-        "  [[YES]] if the form qualifies\n"
-        "  [[NO]] if it does not\n"
-        "The final line must contain the marker and nothing else after it.\n"
+        "You may think it through before answering.\n"
+        'Reply with ONLY a JSON object: {"qualifies": true or false, "reason": "<short reason>"}\n'
         f"Form title: {form_title}\n"
         f"Fields:\n" + "\n".join(field_lines)
     )
 
 
 def parse_gate_reply(reply: str) -> tuple[bool, str]:
-    """Parse a gate reply that contains [[YES]] or [[NO]] markers.
+    """Parse a gate reply containing {"qualifies": bool, "reason": str}.
 
-    Returns (qualifies, reason).
-    Raises ValueError if neither marker is found.
+    Tolerates prose around the JSON and string values like "yes"/"no".
+    Returns (qualifies, reason). Raises ValueError if unparseable.
     """
-    reply_upper = reply.upper()
-    yes_marker = "[[YES]]"
-    no_marker = "[[NO]]"
+    data = extract_json(reply)
+    if not isinstance(data, dict):
+        raise ValueError(f"Gate reply is not a JSON object: {reply[:200]!r}")
 
-    has_yes = yes_marker in reply_upper
-    has_no = no_marker in reply_upper
+    raw = data.get("qualifies")
+    if isinstance(raw, bool):
+        qualifies = raw
+    elif isinstance(raw, str):
+        lowered = raw.strip().lower()
+        if lowered in {"yes", "true", "y", "1"}:
+            qualifies = True
+        elif lowered in {"no", "false", "n", "0"}:
+            qualifies = False
+        else:
+            raise ValueError(f"Gate 'qualifies' is not a boolean: {raw!r}")
+    else:
+        raise ValueError(f"Gate reply missing boolean 'qualifies': {reply[:200]!r}")
 
-    if has_yes and not has_no:
-        reason = _extract_gate_reason(reply, yes_marker)
-        return True, reason
-    if has_no and not has_yes:
-        reason = _extract_gate_reason(reply, no_marker)
-        return False, reason
-    if has_yes and has_no:
-        # Both present — the verdict is the final marker, since reasoning may
-        # mention markers hypothetically before concluding.
-        last_yes = reply_upper.rindex(yes_marker)
-        last_no = reply_upper.rindex(no_marker)
-        if last_yes > last_no:
-            reason = _extract_gate_reason(reply, yes_marker)
-            return True, reason
-        reason = _extract_gate_reason(reply, no_marker)
-        return False, reason
-
-    raise ValueError(
-        f"Gate reply must contain [[YES]] or [[NO]], got: {reply[:200]!r}"
-    )
-
-
-def _extract_gate_reason(reply: str, marker: str) -> str:
-    """Extract the text after the marker as the reason."""
-    idx = reply.upper().index(marker.upper()) + len(marker)
-    return reply[idx:].strip().lstrip("-").strip().lstrip(":").strip()
+    reason = str(data.get("reason", "")).strip()
+    return qualifies, reason
 
 
 def fill_form_prompt(requirements_text: str, form_title: str, fields: list[dict]) -> str:

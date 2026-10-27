@@ -45,6 +45,33 @@ def test_truncated_completion_raises_instead_of_returning_reasoning():
             _client().chat([{"role": "user", "content": "hi"}])
 
 
+def test_response_format_retried_without_when_provider_rejects():
+    """Providers without structured output return 400; retry without it."""
+    rejected = MagicMock()
+    rejected.status_code = 400
+    rejected.raise_for_status = MagicMock()
+
+    ok_msg = {"content": '{"qualifies": true, "reason": "ok"}'}
+    accepted = _response(ok_msg, "stop")
+
+    sent_payloads = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        sent_payloads.append(dict(json or {}))
+        return rejected if len(sent_payloads) == 1 else accepted
+
+    with patch("src.llm.client.requests.post", side_effect=fake_post):
+        result = _client().chat(
+            [{"role": "user", "content": "hi"}],
+            response_format={"type": "json_object"},
+        )
+
+    assert "qualifies" in result
+    assert len(sent_payloads) == 2
+    assert "response_format" in sent_payloads[0]
+    assert "response_format" not in sent_payloads[1]
+
+
 def test_falls_back_to_reasoning_when_content_missing_but_complete():
     """If a model only populates `reasoning` and finishes cleanly, use it."""
     msg = {"content": None, "reasoning": "[[NO]] not relevant"}

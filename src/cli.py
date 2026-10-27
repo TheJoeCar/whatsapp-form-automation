@@ -15,12 +15,13 @@ from .config import PROJECT_ROOT, Config, load_config
 from .forms.filler import fill_form
 from .forms.parser import fetch_form_html, is_google_forms_url, parse_form_html
 from .forms.submitter import submit_form
-from .llm.client import LLMClient, extract_json, list_free_models
+from .llm.client import LLMClient, list_free_models
 from .pipeline import Pipeline
 from .requirements import (
     evaluate_form_prompt,
     fill_form_prompt,
     load_requirements,
+    parse_gate_reply,
 )
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMonitor, login_interactive
@@ -160,20 +161,22 @@ def cmd_check_requirements(config: Config, args) -> None:
         ]
         prompt = evaluate_form_prompt(reqs_text, form.title or "(untitled)", field_summaries)
         reply = llm.complete(
-            "Read the requirements document and decide if this form qualifies. "
-            "Reply with ONLY a JSON object: {\"qualifies\": true/false, \"reason\": \"...\"}",
+            "You decide whether an online form matches a user's requirements. "
+            "You may reason internally, but your final output must be a single "
+            'JSON object: {"qualifies": true or false, "reason": "<short reason>"}. '
+            "Output no other text.\n",
             prompt,
-            max_tokens=300,
+            max_tokens=800,
+            response_format={"type": "json_object"},
         )
         try:
-            gate = extract_json(reply)
-            if gate.get("qualifies"):
-                print("\nGATE: PASS")
-            else:
-                print("\nGATE: FAIL")
-                print(f"  Reason: {gate.get('reason', 'unknown')}")
-        except Exception:
-            print("\nGATE: could not parse LLM response — showing form summary instead")
+            qualifies, reason = parse_gate_reply(reply)
+        except ValueError as exc:
+            print(f"\nGATE: could not parse LLM response ({exc})")
+        else:
+            print("\nGATE: PASS" if qualifies else "\nGATE: FAIL")
+            if reason:
+                print(f"  Reason: {reason}")
     elif reqs_text:
         print(f"\nRequirements document loaded ({config.forms.requirements_file})")
         print("LLM unavailable — showing form summary for manual review:")

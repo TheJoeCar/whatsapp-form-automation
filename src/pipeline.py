@@ -247,11 +247,13 @@ class Pipeline:
                         field_summaries,
                     )
                     gate_reply = self.llm.complete(
-                        "Decide whether the form qualifies. You may reason briefly first, "
-                        "then end with a final line containing exactly [[YES]] or [[NO]]. "
-                        "Never omit the final marker.\n",
+                        "You decide whether an online form matches a user's requirements. "
+                        "You may reason internally, but your final output must be a single "
+                        'JSON object: {"qualifies": true or false, "reason": "<short reason>"}. '
+                        "Output no other text.\n",
                         gate_prompt,
                         max_tokens=800,
+                        response_format={"type": "json_object"},
                     )
                     try:
                         qualifies, reason = parse_gate_reply(gate_reply)
