@@ -30,7 +30,13 @@ def requirements_prompt(requirements_text: str) -> str:
 
 
 def evaluate_form_prompt(requirements_text: str, form_title: str, fields: list[dict]) -> str:
-    """Build a prompt asking the LLM whether the form qualifies."""
+    """Build a prompt asking the LLM whether the form qualifies.
+
+    The LLM should reply with exactly one line:
+      YES - <reason>
+    or
+      NO - <reason>
+    """
     field_lines = []
     for f in fields:
         opts = f" options={f.get('options', [])}" if f.get("options") else ""
@@ -41,8 +47,29 @@ def evaluate_form_prompt(requirements_text: str, form_title: str, fields: list[d
     return (
         requirements_prompt(requirements_text)
         + "Decide if this form qualifies based on the requirements above.\n"
+        "Reply with exactly one line:\n"
+        "  YES - <reason>  (if the form matches the requirements)\n"
+        "  NO - <reason>   (if it does not match)\n"
         f"Form title: {form_title}\n"
         f"Fields:\n" + "\n".join(field_lines)
+    )
+
+
+def parse_gate_reply(reply: str) -> tuple[bool, str]:
+    """Parse a gate reply in YES/NO format.
+
+    Returns (qualifies, reason).
+    Raises ValueError if the reply doesn't start with YES or NO.
+    """
+    first_line = reply.strip().splitlines()[0].strip()
+    if first_line.upper().startswith("YES"):
+        reason = first_line[3:].strip().lstrip("-").strip()
+        return True, reason
+    if first_line.upper().startswith("NO"):
+        reason = first_line[2:].strip().lstrip("-").strip()
+        return False, reason
+    raise ValueError(
+        f"Gate reply must start with YES or NO, got: {first_line[:100]!r}"
     )
 
 

@@ -7,11 +7,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.forms.filler import fill_form  # noqa: E402
 from src.forms.parser import FormField, GoogleForm, parse_form_html  # noqa: E402
-from src.llm.client import extract_json  # noqa: E402
 from src.requirements import (
     load_requirements,
     evaluate_form_prompt,
     fill_form_prompt,
+    parse_gate_reply,
     requirements_prompt,
 )  # noqa: E402
 
@@ -91,8 +91,40 @@ def test_parse_modern_data_params_form():
     assert by_entry["entry.4444444444"].type == "multiple_choice"
 
 
-def test_extract_json_with_prose():
-    assert extract_json('Sure! Here you go:\n{"entry.1": "ok"}\nHope that helps') == {"entry.1": "ok"}
+def test_parse_gate_reply_yes():
+    qualifies, reason = parse_gate_reply("YES - this is an event registration form")
+    assert qualifies is True
+    assert reason == "this is an event registration form"
+
+
+def test_parse_gate_reply_yes_with_dash():
+    qualifies, reason = parse_gate_reply("YES - matches requirements")
+    assert qualifies is True
+    assert reason == "matches requirements"
+
+
+def test_parse_gate_reply_no():
+    qualifies, reason = parse_gate_reply("NO - not a form I would fill")
+    assert qualifies is False
+    assert reason == "not a form I would fill"
+
+
+def test_parse_gate_reply_no_uppercase():
+    qualifies, reason = parse_gate_reply("NO - irrelevant")
+    assert qualifies is False
+
+
+def test_parse_gate_reply_invalid():
+    import pytest
+    with pytest.raises(ValueError):
+        parse_gate_reply("maybe? I'm not sure about this form.")
+
+
+def test_parse_gate_reply_case_insensitive():
+    qualifies, reason = parse_gate_reply("yes - it qualifies")
+    assert qualifies is True
+    qualifies, reason = parse_gate_reply("no - it does not")
+    assert qualifies is False
 
 
 def test_requirements_prompt():
@@ -111,6 +143,8 @@ def test_evaluate_form_prompt():
     prompt = evaluate_form_prompt(SAMPLE_REQUIREMENTS, form.title or "", field_summaries)
     assert "event registration" in prompt.lower()
     assert "entry.1111111111" in prompt
+    assert "YES" in prompt
+    assert "NO" in prompt
 
 
 def test_fill_form_prompt():

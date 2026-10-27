@@ -16,8 +16,13 @@ from .forms.parser import (
     parse_form_html,
 )
 from .forms.submitter import submit_form
-from .llm.client import LLMClient, extract_json
-from .requirements import load_requirements, evaluate_form_prompt, fill_form_prompt
+from .llm.client import LLMClient
+from .requirements import (
+    evaluate_form_prompt,
+    fill_form_prompt,
+    load_requirements,
+    parse_gate_reply,
+)
 from .state import StateStore
 from .whatsapp.monitor import WhatsAppMessage, WhatsAppMonitor
 
@@ -242,18 +247,24 @@ class Pipeline:
                         field_summaries,
                     )
                     gate_reply = self.llm.complete(
-                        "Read the requirements document and decide if this form qualifies. "
-                        "Reply with ONLY a JSON object: {\"qualifies\": true/false, \"reason\": \"...\"}",
+                        "Decide if this form qualifies. Reply with one line:\n"
+                        "  YES - <reason>  or  NO - <reason>\n",
                         gate_prompt,
-                        max_tokens=300,
+                        max_tokens=100,
                     )
-                    gate = extract_json(gate_reply)
-                    if not gate.get("qualifies"):
-                        reason = gate.get("reason", "does not match requirements")
+                    try:
+                        qualifies, reason = parse_gate_reply(gate_reply)
+                    except ValueError as gate_err:
+                        log.warning("requirements gate: %s", gate_err)
+                        return FormOutcome(
+                            url, "skipped", f"gate parse error: {gate_err}"
+                        )
+                    if not qualifies:
                         log.info("skipping form %r: %s", form.title or url, reason)
                         return FormOutcome(url, "skipped", reason)
-                except Exception as exc:  # noqa: BLE001 - gate failure doesn't kill the pipeline
-                    log.warning("requirements gate failed, proceeding anyway: %s", exc)
+                except Exception as exc:  # noqa: BLE001 - gate failure skips the form
+                    log.warning("requirements gate failed, skipping: %s", exc)
+                    return FormOutcome(url, "skipped", f"gate error: {exc}")
 
             # Fill the form using the LLM + requirements doc.
             values, warnings = fill_form(
