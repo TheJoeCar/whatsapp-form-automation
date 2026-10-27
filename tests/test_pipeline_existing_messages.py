@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.pipeline import Pipeline  # noqa: E402
@@ -289,3 +291,47 @@ def test_run_forever_startup_ignores_existing(tmp_path):
             pipeline._startup_ignored = True
 
     assert pipeline._startup_ignored is True
+
+
+def _run_forever_until_first_sleep(pipeline):
+    """Run run_forever but abort at the first sleep, returning the slept values."""
+    mock_monitor = MagicMock()
+    mock_monitor.wait_ready.return_value = True
+    mock_monitor.open_channel.return_value = True
+    mock_monitor.read_messages.return_value = []
+    mock_monitor.__enter__ = MagicMock(return_value=mock_monitor)
+    mock_monitor.__exit__ = MagicMock(return_value=False)
+
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        raise KeyboardInterrupt
+
+    with patch("src.pipeline.WhatsAppMonitor", return_value=mock_monitor), \
+         patch("src.pipeline.time.sleep", side_effect=fake_sleep):
+        with pytest.raises(KeyboardInterrupt):
+            pipeline.run_forever()
+    return sleeps
+
+
+def test_run_forever_falls_back_to_configured_poll_interval(tmp_path):
+    """Without --poll-interval, loop mode must use the config value, not None."""
+    pipeline = _make_pipeline(tmp_path)
+    pipeline.config.whatsapp.poll_interval_seconds = 42
+
+    assert _run_forever_until_first_sleep(pipeline) == [42]
+
+
+def test_run_forever_cli_poll_interval_overrides_config(tmp_path):
+    """--poll-interval takes precedence in loop mode."""
+    cfg = Config()
+    cfg.pipeline.state_file = tmp_path / "processed.json"
+    cfg.forms.requirements_file = tmp_path / "requirements.md"
+    cfg.forms.requirements_file.unlink(missing_ok=True)
+    cfg.whatsapp.poll_interval_seconds = 42
+
+    pipeline = Pipeline(cfg, dry_run=True, headless=True, poll_interval=7)
+    pipeline.llm = None
+
+    assert _run_forever_until_first_sleep(pipeline) == [7]

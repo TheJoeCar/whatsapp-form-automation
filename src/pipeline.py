@@ -106,13 +106,14 @@ class Pipeline:
 
     def run_forever(self, *, include_existing: bool = False, only_last: bool = False) -> None:
         """Keep one browser session open and poll on an interval."""
-        interval = self._poll_interval
-        headless = self._headless if self._headless is not None else self.config.whatsapp.headless
-        channel = self._channel or self.config.whatsapp.channel
+        effective = self._effective_config()
+        interval = effective.poll_interval_seconds
+        headless = self._headless if self._headless is not None else effective.headless
+        channel = effective.channel
         log.info("polling %r every %ss (Ctrl+C to stop)", channel, interval)
         while True:
             try:
-                with WhatsAppMonitor(self._effective_config(), headless=headless) as monitor:
+                with WhatsAppMonitor(effective, headless=headless) as monitor:
                     if not monitor.wait_ready(quiet=False):
                         raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
                     log.info("monitor ready - watching %r", channel)
