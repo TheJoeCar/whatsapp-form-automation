@@ -88,16 +88,18 @@ def cmd_run(config: Config, args) -> None:
     log.info("=== %s mode ===", mode)
     if args.loop:
         pipeline.run_forever(
-            no_ack=args.no_ack,
-            no_ack_last=args.no_ack_last,
+            include_existing=args.existing,
+            only_last=args.last,
         )
     else:
         handled = pipeline.run_once(
-            no_ack=args.no_ack,
-            no_ack_last=args.no_ack_last,
+            include_existing=args.existing,
+            only_last=args.last,
         )
-        print(f"done - {handled} new message(s) handled "
-              f"(mode: {mode}, log: {config.pipeline.log_file})")
+        summary = f"done - {handled} message(s) handled"
+        if pipeline.ignored_existing:
+            summary += f", {pipeline.ignored_existing} existing ignored"
+        print(f"{summary} (mode: {mode}, log: {config.pipeline.log_file})")
 
 
 def cmd_parse_form(config: Config, args) -> None:
@@ -268,29 +270,8 @@ def cmd_state(config: Config, args) -> None:
     print(f"{store.count()} processed message(s) in {store.path}")
     if args.clear:
         store.path.unlink(missing_ok=True)
-        print("state cleared")
-    if args.ack:
-        headless = _resolve_headed(config, args)
-        monitor = WhatsAppMonitor(config.whatsapp, headless=headless)
-        monitor.start()
-        try:
-            if not monitor.wait_ready(quiet=False):
-                print("WhatsApp Web not ready — are you logged in?")
-                return
-            if not monitor.open_channel(config.whatsapp.channel):
-                print(f"Could not open channel {config.whatsapp.channel!r}. "
-                      f"Run 'wa list-channels' to see available channels.")
-                return
-            messages = monitor.read_messages()
-            newly = 0
-            for msg in messages:
-                if not store.seen(msg.message_id):
-                    store.mark(msg.message_id, "acknowledged")
-                    newly += 1
-            store.save()
-            print(f"acknowledged {newly} message(s) ({len(messages)} total visible)")
-        finally:
-            monitor.stop()
+        print("state cleared — every message in the channel is a fresh message again")
+        print("hint: `wa run --existing` will process them, `wa run` will ignore them")
 
 
 def cmd_completion(config: Config, args) -> None:
@@ -364,18 +345,37 @@ def main(argv=None) -> None:
     parser.add_argument("--config", type=Path, default=None, help="path to config.yaml")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("run", help="poll WhatsApp and process new form links")
+    p = sub.add_parser(
+        "run",
+        help="watch a WhatsApp channel and handle new form links",
+        description=(
+            "Watch a WhatsApp channel for Google Forms links.\n\n"
+            "By default, messages already in the channel are ignored (marked as seen)\n"
+            "and only messages that arrive while the script is running are processed."
+        ),
+        epilog=(
+            "examples:\n"
+            "  wa run                 ignore what's already there, handle new messages\n"
+            "  wa run --loop          keep watching until Ctrl+C\n"
+            "  wa run --last          handle only the most recent message already there\n"
+            "  wa run --existing      handle all unhandled messages already there\n"
+            "  wa run --dry-run       preview without submitting\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("--loop", action="store_true", help="keep polling until Ctrl+C")
     p.add_argument("--dry-run", dest="dry_run", action="store_true", default=None,
                    help="preview only: print what would be submitted without actually sending")
     p.add_argument("--submit", dest="dry_run", action="store_false",
                    help="submit forms for real (this is the default)")
     p.add_argument("--headed", action="store_true", help="run WhatsApp browser headful (debugging)")
-    p.add_argument("--no-ack", action="store_true",
-                   help="process existing messages too (don't auto-acknowledge)")
-    p.add_argument("--no-ack-last", action="store_true",
-                   help="ack all messages except the most recent one (process only the last, "
-                        "even if it was handled before)")
+    existing = p.add_mutually_exclusive_group()
+    existing.add_argument("--last", action="store_true",
+                          help="handle only the most recent message already in the channel, "
+                               "even if it was handled before")
+    existing.add_argument("--existing", action="store_true",
+                          help="also handle messages already in the channel (ones handled "
+                               "before are still skipped)")
     p.add_argument("--channel", default=None,
                    help="override the configured WhatsApp channel")
     p.add_argument("--poll-interval", type=int, default=None,
@@ -409,10 +409,18 @@ def main(argv=None) -> None:
 
     sub.add_parser("list-free-models", help="list zero-cost models currently on OpenRouter")
 
-    p = sub.add_parser("state", help="show/clear/acknowledge the processed-message store")
-    p.add_argument("--clear", action="store_true", help="delete the state file entirely")
-    p.add_argument("--ack", action="store_true", help="mark all visible messages in the channel as seen (no processing)")
-    p.add_argument("--headed", action="store_true", help="run headful (for ack)")
+    p = sub.add_parser(
+        "state",
+        help="show or clear the record of handled messages",
+        description=(
+            "Show which messages have already been handled.\n\n"
+            "`wa run` already ignores messages that are already in the channel,\n"
+            "so there is no separate command to mark them as seen. Use --clear\n"
+            "to forget the history and make every message new again."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("--clear", action="store_true", help="forget every handled message")
 
     sub.add_parser("init", help="check configuration health")
 

@@ -1,4 +1,4 @@
-"""Tests for pipeline auto-ack behavior."""
+"""Tests for how the pipeline treats messages already in the channel."""
 
 import sys
 from pathlib import Path
@@ -22,8 +22,8 @@ def _make_pipeline(tmp_path):
     return pipeline
 
 
-def test_ack_existing_marks_messages_seen(tmp_path):
-    """_ack_existing marks all visible messages as seen without processing."""
+def test_ignore_existing_marks_messages_seen(tmp_path):
+    """_ignore_existing marks all visible messages as seen without processing."""
     pipeline = _make_pipeline(tmp_path)
 
     fake_messages = [
@@ -35,15 +35,15 @@ def test_ack_existing_marks_messages_seen(tmp_path):
     mock_monitor.open_channel.return_value = True
     mock_monitor.read_messages.return_value = fake_messages
 
-    pipeline._ack_existing(mock_monitor)
+    pipeline._ignore_existing(mock_monitor)
 
     assert pipeline.state.seen("msg-1")
     assert pipeline.state.seen("msg-2")
     mock_monitor.open_channel.assert_called_once()
 
 
-def test_ack_existing_skips_already_seen(tmp_path):
-    """_ack_existing does not re-mark already-seen messages."""
+def test_ignore_existing_skips_already_seen(tmp_path):
+    """_ignore_existing does not re-mark already-seen messages."""
     pipeline = _make_pipeline(tmp_path)
     pipeline.state.mark("msg-1", "submitted")
 
@@ -56,39 +56,39 @@ def test_ack_existing_skips_already_seen(tmp_path):
     mock_monitor.open_channel.return_value = True
     mock_monitor.read_messages.return_value = fake_messages
 
-    pipeline._ack_existing(mock_monitor)
+    pipeline._ignore_existing(mock_monitor)
 
     assert pipeline.state.seen("msg-1")
     assert pipeline.state.seen("msg-2")
 
 
-def test_ack_existing_no_messages(tmp_path):
-    """_ack_existing handles empty channel gracefully."""
+def test_ignore_existing_no_messages(tmp_path):
+    """_ignore_existing handles empty channel gracefully."""
     pipeline = _make_pipeline(tmp_path)
 
     mock_monitor = MagicMock()
     mock_monitor.open_channel.return_value = True
     mock_monitor.read_messages.return_value = []
 
-    pipeline._ack_existing(mock_monitor)
+    pipeline._ignore_existing(mock_monitor)
 
     assert pipeline.state.count() == 0
 
 
-def test_ack_existing_channel_not_found(tmp_path):
-    """_ack_existing handles channel open failure gracefully."""
+def test_ignore_existing_channel_not_found(tmp_path):
+    """_ignore_existing handles channel open failure gracefully."""
     pipeline = _make_pipeline(tmp_path)
 
     mock_monitor = MagicMock()
     mock_monitor.open_channel.return_value = False
 
-    pipeline._ack_existing(mock_monitor)
+    pipeline._ignore_existing(mock_monitor)
 
     assert pipeline.state.count() == 0
 
 
-def test_ack_all_except_last_marks_all_but_last_seen(tmp_path):
-    """_ack_all_except_last acks all messages except the most recent."""
+def test_ignore_all_but_last_marks_all_but_last_seen(tmp_path):
+    """_ignore_all_but_last marks all messages except the most recent as seen."""
     pipeline = _make_pipeline(tmp_path)
 
     fake_messages = [
@@ -101,15 +101,15 @@ def test_ack_all_except_last_marks_all_but_last_seen(tmp_path):
     mock_monitor.open_channel.return_value = True
     mock_monitor.read_messages.return_value = fake_messages
 
-    pipeline._ack_all_except_last(mock_monitor)
+    pipeline._ignore_all_but_last(mock_monitor)
 
     assert pipeline.state.seen("msg-1")
     assert pipeline.state.seen("msg-2")
     assert not pipeline.state.seen("msg-3")
 
 
-def test_ack_all_except_last_single_message(tmp_path):
-    """_ack_all_except_last with one message leaves it un-acked."""
+def test_ignore_all_but_last_single_message(tmp_path):
+    """_ignore_all_but_last with one message leaves it pending."""
     pipeline = _make_pipeline(tmp_path)
 
     fake_messages = [
@@ -120,26 +120,26 @@ def test_ack_all_except_last_single_message(tmp_path):
     mock_monitor.open_channel.return_value = True
     mock_monitor.read_messages.return_value = fake_messages
 
-    pipeline._ack_all_except_last(mock_monitor)
+    pipeline._ignore_all_but_last(mock_monitor)
 
     assert not pipeline.state.seen("msg-1")
 
 
-def test_ack_all_except_last_no_messages(tmp_path):
-    """_ack_all_except_last with no messages is a no-op."""
+def test_ignore_all_but_last_no_messages(tmp_path):
+    """_ignore_all_but_last with no messages is a no-op."""
     pipeline = _make_pipeline(tmp_path)
 
     mock_monitor = MagicMock()
     mock_monitor.open_channel.return_value = True
     mock_monitor.read_messages.return_value = []
 
-    pipeline._ack_all_except_last(mock_monitor)
+    pipeline._ignore_all_but_last(mock_monitor)
 
     assert pipeline.state.count() == 0
 
 
-def test_ack_all_except_last_resets_previously_handled_last(tmp_path):
-    """_ack_all_except_last forgets the last message if it was processed before,
+def test_ignore_all_but_last_resets_previously_handled_last(tmp_path):
+    """_ignore_all_but_last forgets the last message if it was processed before,
     so it is genuinely reprocessed (instead of reporting '0 new')."""
     pipeline = _make_pipeline(tmp_path)
     # Simulate a previous run that already handled the latest message.
@@ -155,16 +155,16 @@ def test_ack_all_except_last_resets_previously_handled_last(tmp_path):
     mock_monitor.open_channel.return_value = True
     mock_monitor.read_messages.return_value = fake_messages
 
-    pipeline._ack_all_except_last(mock_monitor)
+    pipeline._ignore_all_but_last(mock_monitor)
 
     assert pipeline.state.seen("msg-1")
     assert pipeline.state.seen("msg-2")
     assert not pipeline.state.seen("msg-3")  # reset, so _poll_once treats it as new
 
 
-def test_run_once_no_ack_last_reprocesses_old_last_message(tmp_path):
-    """run_once with --no-ack-last processes the last message even though it
-    was already handled in a previous run."""
+def test_run_once_only_last_reprocesses_old_last_message(tmp_path):
+    """run_once with --last processes the last message even though it was
+    already handled in a previous run."""
     pipeline = _make_pipeline(tmp_path)
     pipeline.state.mark("msg-2", "submitted")  # previously handled
 
@@ -190,14 +190,14 @@ def test_run_once_no_ack_last_reprocesses_old_last_message(tmp_path):
 
     with patch("src.pipeline.WhatsAppMonitor", return_value=mock_monitor), \
          patch.object(pipeline, "_poll_once", side_effect=fake_poll_once):
-        handled = pipeline.run_once(no_ack_last=True)
+        handled = pipeline.run_once(only_last=True)
 
     assert handled == 1
     assert handled_ids == ["msg-2"]  # the previously-handled message was reprocessed
 
 
-def test_run_once_auto_acks_by_default(tmp_path):
-    """run_once auto-acks existing messages by default."""
+def test_run_once_ignores_existing_by_default(tmp_path):
+    """run_once ignores existing messages by default."""
     cfg = Config()
     cfg.pipeline.state_file = tmp_path / "processed.json"
     cfg.forms.requirements_file = tmp_path / "requirements.md"
@@ -222,14 +222,15 @@ def test_run_once_auto_acks_by_default(tmp_path):
          patch("src.pipeline.WhatsAppMonitor", return_value=mock_monitor):
         handled = pipeline.run_once()
 
-    # open_channel and read_messages should have been called during auto-ack
+    # open_channel and read_messages should have been called while ignoring existing messages
     assert mock_monitor.open_channel.called
     assert mock_monitor.read_messages.called
     assert mock_poll.called
+    assert pipeline.ignored_existing == 2
 
 
-def test_run_once_no_ack_does_not_auto_ack(tmp_path):
-    """run_once with --no-ack does NOT auto-ack existing messages."""
+def test_run_once_include_existing_does_not_ignore(tmp_path):
+    """run_once with --existing does NOT ignore existing messages."""
     cfg = Config()
     cfg.pipeline.state_file = tmp_path / "processed.json"
     cfg.forms.requirements_file = tmp_path / "requirements.md"
@@ -251,13 +252,14 @@ def test_run_once_no_ack_does_not_auto_ack(tmp_path):
 
     with patch.object(pipeline, "_poll_once", return_value=1) as mock_poll, \
          patch("src.pipeline.WhatsAppMonitor", return_value=mock_monitor):
-        handled = pipeline.run_once(no_ack=True)
+        handled = pipeline.run_once(include_existing=True)
 
     assert handled == 1
+    assert pipeline.ignored_existing == 0  # nothing was ignored
 
 
-def test_run_forever_first_cycle_auto_acks(tmp_path):
-    """run_forever auto-acks on the first cycle before processing."""
+def test_run_forever_startup_ignores_existing(tmp_path):
+    """run_forever ignores existing messages on the first cycle."""
     cfg = Config()
     cfg.pipeline.state_file = tmp_path / "processed.json"
     cfg.forms.requirements_file = tmp_path / "requirements.md"
@@ -278,12 +280,12 @@ def test_run_forever_first_cycle_auto_acks(tmp_path):
     mock_monitor.__exit__ = MagicMock(return_value=False)
 
     # Simulate just the first cycle of run_forever (before the inner loop)
-    # This is the auto-ack phase
+    # This is the startup ignore phase
     with patch("src.pipeline.WhatsAppMonitor", return_value=mock_monitor), \
          patch("time.sleep"):
-        # Manually exercise the auto-ack logic that run_forever does
-        if not pipeline._auto_acked:
-            pipeline._ack_existing(mock_monitor)
-            pipeline._auto_acked = True
+        # Manually exercise the startup-ignore logic that run_forever does
+        if not pipeline._startup_ignored:
+            pipeline._ignore_existing(mock_monitor)
+            pipeline._startup_ignored = True
 
-    assert pipeline._auto_acked is True
+    assert pipeline._startup_ignored is True

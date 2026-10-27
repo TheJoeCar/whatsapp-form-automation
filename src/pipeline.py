@@ -55,7 +55,10 @@ class Pipeline:
         self._headless = headless
         self._channel = channel
         self._poll_interval = poll_interval
-        self._auto_acked = False
+        self._startup_ignored = False
+        # How many messages already in the channel were ignored during the
+        # last run, so the CLI can report it to the user.
+        self.ignored_existing = 0
 
     def _load_requirements(self, config: Config) -> str | None:
         text = load_requirements(config.forms.requirements_file)
@@ -83,20 +86,25 @@ class Pipeline:
     # ------------------------------------------------------------------ #
     # Main loops
 
-    def run_once(self, *, no_ack: bool = False, no_ack_last: bool = False) -> int:
-        """One poll cycle (launches its own browser). Returns messages handled."""
+    def run_once(self, *, include_existing: bool = False, only_last: bool = False) -> int:
+        """One poll cycle (launches its own browser). Returns messages handled.
+
+        By default, everything already in the channel is ignored and only
+        messages arriving afterwards are processed. `include_existing` also
+        processes unhandled messages already present; `only_last` processes
+        just the most recent message already present.
+        """
         headless = self._headless if self._headless is not None else self.config.whatsapp.headless
         with WhatsAppMonitor(self._effective_config(), headless=headless) as monitor:
             if not monitor.wait_ready(quiet=False):
                 raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
-            if not no_ack:
-                if no_ack_last:
-                    self._ack_all_except_last(monitor)
-                else:
-                    self._ack_existing(monitor)
+            if only_last:
+                self.ignored_existing = self._ignore_all_but_last(monitor)
+            elif not include_existing:
+                self.ignored_existing = self._ignore_existing(monitor)
             return self._poll_once(monitor)
 
-    def run_forever(self, *, no_ack: bool = False, no_ack_last: bool = False) -> None:
+    def run_forever(self, *, include_existing: bool = False, only_last: bool = False) -> None:
         """Keep one browser session open and poll on an interval."""
         interval = self._poll_interval
         headless = self._headless if self._headless is not None else self.config.whatsapp.headless
@@ -108,12 +116,12 @@ class Pipeline:
                     if not monitor.wait_ready(quiet=False):
                         raise RuntimeError("WhatsApp Web did not become ready (not logged in?)")
                     log.info("monitor ready - watching %r", channel)
-                    if not no_ack and not self._auto_acked:
-                        if no_ack_last:
-                            self._ack_all_except_last(monitor)
-                        else:
-                            self._ack_existing(monitor)
-                        self._auto_acked = True
+                    if not self._startup_ignored:
+                        if only_last:
+                            self.ignored_existing = self._ignore_all_but_last(monitor)
+                        elif not include_existing:
+                            self.ignored_existing = self._ignore_existing(monitor)
+                        self._startup_ignored = True
                     while True:
                         handled = self._poll_once(monitor)
                         if handled:
@@ -141,30 +149,31 @@ class Pipeline:
             selectors=base.selectors,
         )
 
-    def _ack_existing(self, monitor: WhatsAppMonitor) -> None:
-        """Mark all currently visible messages as seen without processing them."""
+    def _ignore_existing(self, monitor: WhatsAppMonitor) -> int:
+        """Ignore all messages currently in the channel. Returns how many were
+        newly ignored (already-seen ones are not counted)."""
         if not monitor.open_channel(self._effective_config().channel):
-            return
+            return 0
         messages = monitor.read_messages()
-        acked = 0
+        ignored = 0
         for msg in messages:
             if not self.state.seen(msg.message_id):
                 self.state.mark(msg.message_id, "acknowledged")
-                acked += 1
-        if acked:
-            self.state.save()
-            log.info("acknowledged %d existing message(s)", acked)
+                ignored += 1
+        if ignored:
+            log.info("ignoring %d message(s) already in the channel", ignored)
+        return ignored
 
-    def _ack_all_except_last(self, monitor: WhatsAppMonitor) -> None:
-        """Mark all visible messages as seen except the most recent one, which
-        is reset so it gets reprocessed even if it was handled before."""
+    def _ignore_all_but_last(self, monitor: WhatsAppMonitor) -> int:
+        """Ignore all visible messages except the most recent one, which is
+        reset so it gets reprocessed even if it was handled before."""
         if not monitor.open_channel(self._effective_config().channel):
-            return
+            return 0
         messages = monitor.read_messages()
         if not messages:
-            return
+            return 0
         # Forget the last message if it was processed in a previous run, so
-        # --no-ack-last genuinely reprocesses it instead of reporting "0 new".
+        # --last genuinely reprocesses it instead of reporting "0 new".
         last = messages[-1]
         if self.state.seen(last.message_id):
             self.state.forget(last.message_id)
@@ -172,14 +181,14 @@ class Pipeline:
                 "reset last message %s (processed before) so it will be handled again",
                 last.message_id,
             )
-        acked = 0
+        ignored = 0
         for msg in messages[:-1]:
             if not self.state.seen(msg.message_id):
                 self.state.mark(msg.message_id, "acknowledged")
-                acked += 1
-        if acked:
-            self.state.save()
-            log.info("acknowledged %d message(s), keeping last message pending", acked)
+                ignored += 1
+        if ignored:
+            log.info("ignoring %d older message(s), keeping the latest pending", ignored)
+        return ignored
 
     def _poll_once(self, monitor: WhatsAppMonitor) -> int:
         """Poll using an already-open monitor. Returns messages handled."""

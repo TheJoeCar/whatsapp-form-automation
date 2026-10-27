@@ -91,15 +91,15 @@ wa debug-whatsapp            # selector diagnostics if extraction breaks
 wa list-channels             # list all chats/channels with their names
 
 # The pipeline
-wa run                       # one poll cycle, submit forms for real
-wa run --dry-run            # preview only, no submissions
-wa run --loop                # keep polling until Ctrl+C
-wa run --no-ack              # process existing messages too (don't auto-ack)
-wa run --no-ack-last         # ack all messages except the most recent
+wa run                       # ignore what's already in the channel, handle new messages
+wa run --loop                # keep watching until Ctrl+C
+wa run --last                # handle only the most recent message already there
+wa run --existing            # handle all unhandled messages already there
+wa run --dry-run             # preview only, no submissions
 wa run --channel "My Channel"  # override the configured channel
 wa run --poll-interval 30    # override poll interval in seconds
-wa state --clear             # reset processed messages
-wa state --ack               # mark visible channel messages as seen (no submission)
+wa state                     # show how many messages have been handled
+wa state --clear             # forget the history (every message becomes new)
 ```
 
 ## How It Works
@@ -112,25 +112,23 @@ wa state --ack               # mark visible channel messages as seen (no submiss
 6. Values are submitted via HTTP POST to the form's `formResponse` endpoint
 7. The result is logged and the message is marked as processed
 
-### Auto-Acknowledgment
+### What gets processed
 
-By default, when the pipeline starts it automatically acknowledges (marks as seen)
-all currently visible messages in the channel before processing. This prevents
-old form links from being re-processed on every restart. Only messages that
-arrive *after* the acknowledgment are handled.
+`wa run` treats the channel as a **stream**. When it starts, everything already
+in the channel is ignored, and it waits for messages that arrive from then on.
+That's the safe default: restarting the script never re-submits an old form.
 
-This behavior can be overridden:
+If you want to act on a form that is already sitting in the channel:
 
-| Flag | Effect |
+| Command | Effect |
 |---|---|
-| (default) | Auto-ack existing messages, process only new ones |
-| `--no-ack` | Process all visible messages including old ones |
-| `--no-ack-last` | Ack all messages except the most recent; process only the last (even if handled in a previous run) |
-| `--channel` | Override the configured WhatsApp channel for this run |
-| `--poll-interval N` | Override the poll interval in seconds for this run |
+| `wa run` | Ignore everything already there; handle only new messages |
+| `wa run --last` | Handle only the most recent message already there, even if handled before |
+| `wa run --existing` | Handle all messages already there that haven't been handled yet |
+| `wa state --clear` | Forget the history, so the next run sees every message as new |
 
-The `wa state --ack` and `wa state --clear` commands provide manual control
-over the processed-message store.
+Reprocessing the same message is always opt-in (`--last`), and messages that
+were already handled are otherwise never submitted twice.
 
 ## Swapping in a Local Model
 
@@ -160,9 +158,10 @@ No API key needed for Ollama; same code path.
   heuristics when the LLM fails, so the pipeline still works.
 - **Submission rejected**: single-page forms only. Check the form is accepting
   responses and CAPTCHA isn't blocking the submission.
-- **Old form links getting re-processed**: by default the pipeline auto-acks
-  all visible messages before processing, so only new messages are handled.
-  Use `wa run --no-ack` if you intentionally want to re-process old links.
+- **Old form links getting re-processed**: by default everything already in the
+  channel is ignored, so only new messages are handled. Use `wa run --last` if
+  you intentionally want to re-process the most recent old link, or
+  `wa run --existing` to handle all unhandled ones.
 - **`wa: command not found`**: install the CLI with `uv tool install --editable .`
   and make sure `~/.local/bin` is on your `PATH`.
 - **Tab-completion not working**: make sure `bash-completion` is installed, then
