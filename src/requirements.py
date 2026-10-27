@@ -44,8 +44,11 @@ def evaluate_form_prompt(requirements_text: str, form_title: str, fields: list[d
     return (
         requirements_prompt(requirements_text)
         + "Decide if this form qualifies based on the requirements above.\n"
-        "Your reply MUST include [[YES]] or [[NO]] somewhere in the text.\n"
-        "You can include reasoning before or after the marker.\n"
+        "You may think it through step by step first.\n"
+        "Then, on the final line of your reply, write exactly one marker:\n"
+        "  [[YES]] if the form qualifies\n"
+        "  [[NO]] if it does not\n"
+        "The final line must contain the marker and nothing else after it.\n"
         f"Form title: {form_title}\n"
         f"Fields:\n" + "\n".join(field_lines)
     )
@@ -71,10 +74,11 @@ def parse_gate_reply(reply: str) -> tuple[bool, str]:
         reason = _extract_gate_reason(reply, no_marker)
         return False, reason
     if has_yes and has_no:
-        # Both present — the one that appears first wins.
-        first_yes = reply_upper.index(yes_marker)
-        first_no = reply_upper.index(no_marker)
-        if first_yes < first_no:
+        # Both present — the verdict is the final marker, since reasoning may
+        # mention markers hypothetically before concluding.
+        last_yes = reply_upper.rindex(yes_marker)
+        last_no = reply_upper.rindex(no_marker)
+        if last_yes > last_no:
             reason = _extract_gate_reason(reply, yes_marker)
             return True, reason
         reason = _extract_gate_reason(reply, no_marker)

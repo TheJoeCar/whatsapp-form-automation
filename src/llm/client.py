@@ -64,8 +64,22 @@ class LLMClient:
                     continue
                 resp.raise_for_status()
                 data = resp.json()
-                choice = data["choices"][0]["message"]
-                content = choice.get("content") or choice.get("reasoning")
+                choice = data["choices"][0]
+                msg = choice.get("message") or {}
+                content = msg.get("content")
+                finish_reason = choice.get("finish_reason")
+                if not content:
+                    # Reasoning models emit chain-of-thought in a separate
+                    # `reasoning` field and the actual answer in `content`.
+                    # If content is missing because we ran out of tokens, the
+                    # reasoning text is truncated mid-thought and never
+                    # contains the answer, so fail loudly instead of returning it.
+                    if finish_reason == "length":
+                        raise LLMError(
+                            f"Completion truncated before answering "
+                            f"(max_tokens too small) from {self.model}"
+                        )
+                    content = msg.get("reasoning")
                 if not content:
                     raise LLMError(f"Empty completion from {self.model}")
                 return content

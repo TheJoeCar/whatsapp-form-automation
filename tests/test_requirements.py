@@ -151,11 +151,12 @@ def test_parse_gate_reply_case_insensitive():
     assert qualifies is False
 
 
-def test_parse_gate_reply_both_markers_first_wins():
-    """If both markers appear, the first one wins."""
-    qualifies, reason = parse_gate_reply("[[YES]] first [[NO]] second")
+def test_parse_gate_reply_both_markers_last_wins():
+    """If both markers appear, the final one is the verdict (reasoning may
+    mention markers hypothetically before concluding)."""
+    qualifies, reason = parse_gate_reply("[[NO]] if irrelevant, but it is relevant\n[[YES]]")
     assert qualifies is True
-    qualifies, reason = parse_gate_reply("[[NO]] first [[YES]] second")
+    qualifies, reason = parse_gate_reply("[[YES]] if relevant, but it is not\n[[NO]]")
     assert qualifies is False
 
 

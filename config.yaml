@@ -15,7 +15,7 @@ llm:
   #   nvidia/nemotron-3-super-120b-a12b:free
   # Paid models (better instruction-following):
   #   ling/ling-3.0-flash
-  model: ling/ling-3.0-flash
+  model: inclusionai/ling-3.0-flash
   # Environment variable that holds the API key (ignored for ollama).
   api_key_env: OPENROUTER_API_KEY
   temperature: 0.2

@@ -247,11 +247,11 @@ class Pipeline:
                         field_summaries,
                     )
                     gate_reply = self.llm.complete(
-                        "You MUST include exactly one of these markers in your reply:\n"
-                        "[[YES]] if the form qualifies, [[NO]] if it does not.\n"
-                        "Do not reply with any other format. The marker is required.\n",
+                        "Decide whether the form qualifies. You may reason briefly first, "
+                        "then end with a final line containing exactly [[YES]] or [[NO]]. "
+                        "Never omit the final marker.\n",
                         gate_prompt,
-                        max_tokens=100,
+                        max_tokens=800,
                     )
                     try:
                         qualifies, reason = parse_gate_reply(gate_reply)
