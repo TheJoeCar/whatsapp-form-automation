@@ -92,26 +92,44 @@ def test_parse_modern_data_params_form():
 
 
 def test_parse_gate_reply_yes():
-    qualifies, reason = parse_gate_reply("YES - this is an event registration form")
+    qualifies, reason = parse_gate_reply("[[YES]] - this is an event registration form")
     assert qualifies is True
     assert reason == "this is an event registration form"
 
 
 def test_parse_gate_reply_yes_with_dash():
-    qualifies, reason = parse_gate_reply("YES - matches requirements")
+    qualifies, reason = parse_gate_reply("[[YES]] matches requirements")
     assert qualifies is True
     assert reason == "matches requirements"
 
 
 def test_parse_gate_reply_no():
-    qualifies, reason = parse_gate_reply("NO - not a form I would fill")
+    qualifies, reason = parse_gate_reply("[[NO]] - not a form I would fill")
     assert qualifies is False
     assert reason == "not a form I would fill"
 
 
 def test_parse_gate_reply_no_uppercase():
-    qualifies, reason = parse_gate_reply("NO - irrelevant")
+    qualifies, reason = parse_gate_reply("[[NO]] - irrelevant")
     assert qualifies is False
+
+
+def test_parse_gate_reply_reasoning_before_marker():
+    """The free model often returns reasoning before the marker."""
+    reply = (
+        "Let me analyze the form title and fields against the requirements.\n"
+        "The form is about climbing, not event registration.\n"
+        "[[NO]] - this is a climbing trip form, not an event registration"
+    )
+    qualifies, reason = parse_gate_reply(reply)
+    assert qualifies is False
+    assert "climbing" in reason.lower()
+
+
+def test_parse_gate_reply_reasoning_after_marker():
+    """Marker at the start with reasoning after still works."""
+    qualifies, reason = parse_gate_reply("[[YES]] - event registration form")
+    assert qualifies is True
 
 
 def test_parse_gate_reply_invalid():
@@ -127,6 +145,21 @@ def test_parse_gate_reply_empty():
 
 
 def test_parse_gate_reply_case_insensitive():
+    qualifies, reason = parse_gate_reply("[[yes]] - it qualifies")
+    assert qualifies is True
+    qualifies, reason = parse_gate_reply("[[no]] - it does not")
+    assert qualifies is False
+
+
+def test_parse_gate_reply_both_markers_first_wins():
+    """If both markers appear, the first one wins."""
+    qualifies, reason = parse_gate_reply("[[YES]] first [[NO]] second")
+    assert qualifies is True
+    qualifies, reason = parse_gate_reply("[[NO]] first [[YES]] second")
+    assert qualifies is False
+
+
+def test_requirements_prompt():
     qualifies, reason = parse_gate_reply("yes - it qualifies")
     assert qualifies is True
     qualifies, reason = parse_gate_reply("no - it does not")

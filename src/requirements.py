@@ -32,10 +32,7 @@ def requirements_prompt(requirements_text: str) -> str:
 def evaluate_form_prompt(requirements_text: str, form_title: str, fields: list[dict]) -> str:
     """Build a prompt asking the LLM whether the form qualifies.
 
-    The LLM should reply with exactly one line:
-      YES - <reason>
-    or
-      NO - <reason>
+    The LLM should include [[YES]] or [[NO]] somewhere in its reply.
     """
     field_lines = []
     for f in fields:
@@ -47,33 +44,51 @@ def evaluate_form_prompt(requirements_text: str, form_title: str, fields: list[d
     return (
         requirements_prompt(requirements_text)
         + "Decide if this form qualifies based on the requirements above.\n"
-        "Reply with exactly one line:\n"
-        "  YES - <reason>  (if the form matches the requirements)\n"
-        "  NO - <reason>   (if it does not match)\n"
+        "Reply with [[YES]] if the form matches the requirements, or [[NO]] if it does not.\n"
+        "You can include reasoning before or after the marker.\n"
         f"Form title: {form_title}\n"
         f"Fields:\n" + "\n".join(field_lines)
     )
 
 
 def parse_gate_reply(reply: str) -> tuple[bool, str]:
-    """Parse a gate reply in YES/NO format.
+    """Parse a gate reply that contains [[YES]] or [[NO]] markers.
 
     Returns (qualifies, reason).
-    Raises ValueError if the reply doesn't start with YES or NO.
+    Raises ValueError if neither marker is found.
     """
-    lines = reply.strip().splitlines()
-    if not lines or not lines[0].strip():
-        raise ValueError("Gate reply is empty")
-    first_line = lines[0].strip()
-    if first_line.upper().startswith("YES"):
-        reason = first_line[3:].strip().lstrip("-").strip()
+    reply_upper = reply.upper()
+    yes_marker = "[[YES]]"
+    no_marker = "[[NO]]"
+
+    has_yes = yes_marker in reply_upper
+    has_no = no_marker in reply_upper
+
+    if has_yes and not has_no:
+        reason = _extract_gate_reason(reply, yes_marker)
         return True, reason
-    if first_line.upper().startswith("NO"):
-        reason = first_line[2:].strip().lstrip("-").strip()
+    if has_no and not has_yes:
+        reason = _extract_gate_reason(reply, no_marker)
         return False, reason
+    if has_yes and has_no:
+        # Both present — the one that appears first wins.
+        first_yes = reply_upper.index(yes_marker)
+        first_no = reply_upper.index(no_marker)
+        if first_yes < first_no:
+            reason = _extract_gate_reason(reply, yes_marker)
+            return True, reason
+        reason = _extract_gate_reason(reply, no_marker)
+        return False, reason
+
     raise ValueError(
-        f"Gate reply must start with YES or NO, got: {first_line[:100]!r}"
+        f"Gate reply must contain [[YES]] or [[NO]], got: {reply[:200]!r}"
     )
+
+
+def _extract_gate_reason(reply: str, marker: str) -> str:
+    """Extract the text after the marker as the reason."""
+    idx = reply.upper().index(marker.upper()) + len(marker)
+    return reply[idx:].strip().lstrip("-").strip().lstrip(":").strip()
 
 
 def fill_form_prompt(requirements_text: str, form_title: str, fields: list[dict]) -> str:
