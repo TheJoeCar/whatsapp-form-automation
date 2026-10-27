@@ -44,7 +44,7 @@ def evaluate_form_prompt(requirements_text: str, form_title: str, fields: list[d
     return (
         requirements_prompt(requirements_text)
         + "Decide if this form qualifies based on the requirements above.\n"
-        "Reply with [[YES]] if the form matches the requirements, or [[NO]] if it does not.\n"
+        "Your reply MUST include [[YES]] or [[NO]] somewhere in the text.\n"
         "You can include reasoning before or after the marker.\n"
         f"Form title: {form_title}\n"
         f"Fields:\n" + "\n".join(field_lines)

@@ -13,7 +13,7 @@ llm:
   # Specific free models (see: python -m src.cli list-free-models), e.g.:
   #   google/gemma-4-31b-it:free
   #   nvidia/nemotron-3-super-120b-a12b:free
-  model: openrouter/free
+  model: google/gemma-4-31b-it:free
   # Environment variable that holds the API key (ignored for ollama).
   api_key_env: OPENROUTER_API_KEY
   temperature: 0.2
