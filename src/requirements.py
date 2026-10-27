@@ -61,7 +61,10 @@ def parse_gate_reply(reply: str) -> tuple[bool, str]:
     Returns (qualifies, reason).
     Raises ValueError if the reply doesn't start with YES or NO.
     """
-    first_line = reply.strip().splitlines()[0].strip()
+    lines = reply.strip().splitlines()
+    if not lines or not lines[0].strip():
+        raise ValueError("Gate reply is empty")
+    first_line = lines[0].strip()
     if first_line.upper().startswith("YES"):
         reason = first_line[3:].strip().lstrip("-").strip()
         return True, reason

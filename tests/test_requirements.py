@@ -120,6 +120,12 @@ def test_parse_gate_reply_invalid():
         parse_gate_reply("maybe? I'm not sure about this form.")
 
 
+def test_parse_gate_reply_empty():
+    import pytest
+    with pytest.raises(ValueError):
+        parse_gate_reply("")
+
+
 def test_parse_gate_reply_case_insensitive():
     qualifies, reason = parse_gate_reply("yes - it qualifies")
     assert qualifies is True
